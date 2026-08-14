@@ -31,6 +31,15 @@ $CFG = [
     // Generate your own with:  php -r "echo bin2hex(random_bytes(32));"
     'recovery_salt' => 'CHANGE_ME_64_HEX_CHARACTERS',
 
+    // GitHub OAuth sign-in (optional). Create a GitHub App with the OAuth flow,
+    // set its redirect URI to https://your-site/github_oauth.php and paste your
+    // own credentials here. Leave the secret empty to hide the buttons.
+    'github_client_id' => 'YOUR_GITHUB_CLIENT_ID',
+    'github_client_secret' => '',
+
+    // "Fork / Star / Watch" buttons target (top-right of every page).
+    'github_repo_url' => 'https://github.com/YOUR_USERNAME/kevbin',
+
     // SEO / social share metadata (used in <meta>/OpenGraph/Twitter tags on every page)
     'meta_description' => 'Paste & share text online. Free, anonymous and super secure.',
     'logo_url' => '',                       // e.g. https://kevbin.ct.ws/logo.png (used as og:image)

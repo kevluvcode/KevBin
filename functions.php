@@ -224,7 +224,8 @@ if (!defined('APP_INITIALIZED')) {
                         occupation, education, languages, hobbies, quote, birthdate, status_msg,
                         github, twitch, tiktok, instagram, reddit, snapchat, bluesky, threads, linkedin,
                         bg_image, bg_mode, bg_fit, bg_color, bg_gradient, bg_veil, bg_blur,
-                        ui_mode, ui_color, ui_gradient, ui_layout, accent_color
+                        ui_mode, ui_color, ui_gradient, ui_layout, accent_color,
+                        github_id, github_username, github_avatar
                  FROM users WHERE id = ?'
             );
             $stmt->execute([(int)$_SESSION['user_id']]);
@@ -831,6 +832,10 @@ if (!defined('APP_INITIALIZED')) {
                 'ui_gradient' => 'VARCHAR(300) NULL',
                 'ui_layout' => 'VARCHAR(10) NOT NULL DEFAULT \'default\'',
                 'accent_color' => 'VARCHAR(7) NULL',
+                // v2.x: GitHub OAuth login (id, login, avatar).
+                'github_id' => 'VARCHAR(64) NULL',
+                'github_username' => 'VARCHAR(64) NULL',
+                'github_avatar' => 'VARCHAR(255) NULL',
             ];
             foreach ($userCols as $name => $def) {
                 if (!column_exists($pdo, 'users', $name)) {
@@ -945,6 +950,75 @@ if (!defined('APP_INITIALIZED')) {
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
                 );
                 log_activity('schema_migrate', 'created online table');
+            }
+            // Wiki: site documentation, community wiki and personal wikis.
+            if (!table_exists($pdo, 'wiki_pages')) {
+                $pdo->exec(
+                    'CREATE TABLE IF NOT EXISTS wiki_pages (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        scope ENUM(\'site\',\'community\',\'personal\') NOT NULL DEFAULT \'community\',
+                        owner_id INT NULL,
+                        slug VARCHAR(190) NOT NULL,
+                        title VARCHAR(255) NOT NULL,
+                        content MEDIUMTEXT NOT NULL,
+                        locked TINYINT(1) NOT NULL DEFAULT 0,
+                        views INT NOT NULL DEFAULT 0,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_wiki_slug (scope, owner_id, slug),
+                        KEY idx_wiki_scope (scope, updated_at)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+                );
+                $pdo->exec(
+                    'CREATE TABLE IF NOT EXISTS wiki_revisions (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        page_id INT NOT NULL,
+                        user_id INT NULL,
+                        content MEDIUMTEXT NOT NULL,
+                        note VARCHAR(255) NULL,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        KEY idx_wiki_rev (page_id, id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+                );
+                log_activity('schema_migrate', 'created wiki_pages/wiki_revisions tables');
+            }
+            // Seed a friendly community wiki home page on first install.
+            if (table_exists($pdo, 'wiki_pages')) {
+                $wikiCount = (int)$pdo->query(
+                    "SELECT COUNT(*) FROM wiki_pages WHERE scope = 'community' AND owner_id IS NULL"
+                )->fetchColumn();
+                if ($wikiCount === 0) {
+                    $home = "= Welcome to the Wiki\n\n"
+                        . "This is the community wiki — a shared knowledge base, docs hub and how-to guide. "
+                        . "Anyone with an account can create and edit pages, and every edit is saved in the page history.\n\n"
+                        . "== Getting started\n\n"
+                        . "* Click **+ New page** to create a page\n"
+                        . "* Edit any page with the **✏ Edit** button\n"
+                        . "* Link between pages with `[[Page Name]]`\n\n"
+                        . "== Markup cheat sheet\n\n"
+                        . "| Markup | Result |\n"
+                        . "| `= Heading` | h1 heading |\n"
+                        . "| `== Sub-heading` | h2 heading |\n"
+                        . "| `**bold**` | **bold** |\n"
+                        . "| `` `code` `` | `code` |\n"
+                        . "| `> quote` | a blockquote |\n"
+                        . "| `* item` | list item |\n"
+                        . "| `---` | horizontal rule |\n"
+                        . "| `[label](https://example.com)` | external link |\n\n"
+                        . "== Rules\n\n"
+                        . "> Be helpful, stay on-topic, no spam. Admins can lock pages that get out of hand.\n\n"
+                        . "Happy writing — check the **🕘 History** tab of any page to see how it evolved.";
+                    $pdo->prepare(
+                        "INSERT INTO wiki_pages (scope, owner_id, slug, title, content, created_at, updated_at)
+                         VALUES ('community', NULL, 'home', 'Welcome', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+                    )->execute([$home]);
+                    $homeId = (int)$pdo->lastInsertId();
+                    $pdo->prepare(
+                        "INSERT INTO wiki_revisions (page_id, user_id, content, note, created_at)
+                         VALUES (?, NULL, ?, 'Initial page', UTC_TIMESTAMP())"
+                    )->execute([$homeId, $home]);
+                    log_activity('schema_migrate', 'seeded community wiki home page');
+                }
             }
         } catch (Throwable $t) {
             error_log('[schema_ensure] ' . $t->getMessage());
@@ -1366,9 +1440,9 @@ if (!defined('APP_INITIALIZED')) {
             $css[] = ':root { --accent1: ' . $accent . '; --accent2: ' . $accent . '; }';
         }
         if ($layout === 'compact') {
-            $css[] = '.container { max-width: 900px; }';
+            $css[] = '@media (min-width: 992px) { .container { max-width: 1000px; } }';
         } elseif ($layout === 'wide') {
-            $css[] = '.container { max-width: 1440px; }';
+            $css[] = '@media (min-width: 992px) { .container { max-width: 1700px; } }';
         }
         return implode("\n", $css);
     }
@@ -1445,6 +1519,22 @@ if (!defined('APP_INITIALIZED')) {
         font-family: "Space Grotesk", sans-serif;
         opacity: 0; animation: bodyfade .45s ease forwards;
     }
+    /* compact + super-wide UI */
+    html { font-size: 16px; }
+    body { font-size: .95rem; }
+    h1 { font-size: 1.7rem; } h2 { font-size: 1.45rem; } h3 { font-size: 1.22rem; }
+    h4 { font-size: 1.08rem; } h5 { font-size: .95rem; } h6 { font-size: .85rem; }
+    @media (min-width: 992px) { .container { max-width: 1600px; } }
+    .navbar { padding-top: .25rem; padding-bottom: .25rem; }
+    .navbar-brand { font-size: 1.1rem; }
+    .nav-link { padding-top: .3rem; padding-bottom: .3rem; font-size: .95rem; }
+    .btn { padding: .38rem .85rem; font-size: .9rem; }
+    .btn-sm { padding: .2rem .55rem; font-size: .82rem; }
+    .form-control, .form-select { padding: .4rem .7rem; font-size: .92rem; }
+    .card-body { padding: 1.15rem; }
+    .list-group-item { padding: .6rem 1rem; }
+    .table { font-size: .9rem; }
+    small, .form-text { font-size: .8rem; }
     h1,h2,h3,h4,h5,.navbar-brand { font-family: "Space Grotesk", sans-serif; }
     pre.paste-content, code { font-family: "JetBrains Mono", monospace; }
     pre.paste-content { background: #0b0b0b; border: 1px solid var(--line); padding: 1rem; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
@@ -1572,8 +1662,20 @@ if (!defined('APP_INITIALIZED')) {
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('short.php')) ?>">Shorten</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('links.php')) ?>">My Links</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('tools/')) ?>">Tools</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= e(url('wiki.php')) ?>">Wiki</a></li>
             </ul>
             <ul class="navbar-nav">
+                <?php $ghRepo = (string)($cfg['github_repo_url'] ?? ''); ?>
+                <?php if ($ghRepo !== ''): ?>
+                    <li class="nav-item d-flex align-items-center gap-1 me-2 my-1">
+                        <a class="btn btn-sm btn-outline-light" href="<?= e($ghRepo) ?>/fork" target="_blank" rel="noopener" title="Fork the KevBin source on GitHub">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="vertical-align:-2px;margin-right:3px;"><path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0Z"/></svg>
+                            Fork
+                        </a>
+                        <a class="btn btn-sm btn-outline-light" href="<?= e($ghRepo) ?>" target="_blank" rel="noopener" title="Star the KevBin repo">★</a>
+                        <a class="btn btn-sm btn-outline-light" href="<?= e($ghRepo) ?>" target="_blank" rel="noopener" title="Watch the KevBin repo">👁</a>
+                    </li>
+                <?php endif; ?>
                 <li class="nav-item">
                     <span class="nav-link" id="online-badge" title="People online right now (updates live)">
                         <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#26d07c;margin-right:6px;box-shadow:0 0 6px #26d07c;"></span>

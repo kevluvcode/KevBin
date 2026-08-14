@@ -1,5 +1,5 @@
--- KevBin schema upgrade: profile fields, IP bans
--- Run this ONCE in phpMyAdmin on your own database (the one from config.php).
+﻿-- KevBin schema upgrade: profile fields, IP bans
+-- Run this ONCE in phpMyAdmin on the IF0_XXXXX_YOURDB database.
 
 -- Extra profile fields
 ALTER TABLE users

@@ -13,6 +13,14 @@ page_header('Tools');
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🕶 HTML &amp; JS Obfuscator</h3>
+                <p class="text-secondary small flex-grow-1">Hardened in-browser obfuscator with 6 strength levels — minify, string/number encoding, XOR decoder pool, safe variable renaming, VM wrapper, junk & anti-debug.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="js-obfuscator/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🧙 Lua Obfuscator</h3>
                 <p class="text-secondary small flex-grow-1">Multi-layer Lua protection: renames, string & number encoding, junk injection, an anti-hook / anti-env guard and a load()-based VM with 6 strength levels (Level 5 hides the VM itself as char codes; Level 6 adds dual keys, triple-split bytes and polymorphic junk).</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="lua-obfuscator/">Open</a>
@@ -40,13 +48,31 @@ page_header('Tools');
     <h2 class="h6 mb-3 reveal in-view" style="border-bottom:1px solid var(--line);padding-bottom:.5rem;">💻 Developer</h2>
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mb-4">
 
-        <div class="col reveal">
+<div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🧾 Dev Toolkit</h3>
-                <p class="text-secondary small flex-grow-1">JSON formatter/validator, regex tester, number-base converter, URL parser, HTML entity escape/unescape and a live markdown preview.</p>
+                <h3 class="h6 mb-2">🧮 Developer Toolkit</h3>
+                <p class="text-secondary small flex-grow-1">Regex tester, JSON formatter, timestamp converter, base64, URL encoding, character inspector and more.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="dev/">Open</a>
             </div></div>
         </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🐚 Lua Runner</h3>
+                <p class="text-secondary small flex-grow-1">Execute Lua on the server with a built-in interpreter — console output, line-numbered errors, timeboxed.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="lua/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🎯 SHA-256 Cracker</h3>
+                <p class="text-secondary small flex-grow-1">Wordlist and brute-force attempts to recover weak SHA-256 inputs. Educational — capped at 6 seconds.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="crack/">Open</a>
+            </div></div>
+        </div>
+
+    </div>
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
@@ -170,13 +196,22 @@ page_header('Tools');
             </div></div>
         </div>
 
-        <div class="col reveal">
+<div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🔤 Character Inspector</h3>
-                <p class="text-secondary small flex-grow-1">Code points, UTF-8 bytes and HTML entities for any character.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="charcode/">Open</a>
+                <h3 class="h6 mb-2">🛠️ HTTP Headers Inspector</h3>
+                <p class="text-secondary small flex-grow-1">View request & response headers for any public URL, with redirect hop tracing and TLS certificate details.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="headers/">Open</a>
             </div></div>
         </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🔢 Numeral Converter</h3>
+                <p class="text-secondary small flex-grow-1">Live binary / octal / decimal / hexadecimal conversion as you type.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="numerals/">Open</a>
+            </div></div>
+        </div>
+    </div>
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
@@ -210,9 +245,26 @@ page_header('Tools');
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🔍 OSINT Toolkit</h3>
-                <p class="text-secondary small flex-grow-1">Public-information lookups for usernames, emails, phones, domains and IPs plus a manual grab-bag.</p>
+                <p class="text-secondary small flex-grow-1">Live lookups (IP, WHOIS, certs, email) plus a searchable directory of all 1,166 OSINT Framework tools — badges, pricing and live status included.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="osint/">Open</a>
                 <span class="text-secondary small mt-2">⚠️ For legal research & security testing only.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🌐 Web Search</h3>
+                <p class="text-secondary small flex-grow-1">Private clearnet search engine — your query is proxied through this server to DuckDuckGo and rendered here, no tracking, no account.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="websearch/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🌑 Dark Web Search</h3>
+                <p class="text-secondary small flex-grow-1">Gateway to the Tor network's search engines (Torch, DuckDuckGo Onion, Ahmia) — your query goes straight from your Tor Browser to the onion index.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="darkweb/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ Requires Tor Browser — .onion links don't open in normal browsers.</span>
             </div></div>
         </div>
 

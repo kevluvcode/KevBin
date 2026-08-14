@@ -29,6 +29,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('settings.php');
     }
 
+    if (!empty($_POST['github_unlink'])) {
+        db()->prepare('UPDATE users SET github_id = NULL, github_username = NULL, github_avatar = NULL WHERE id = ?')
+            ->execute([(int)$u['id']]);
+        log_activity('github_unlink', $u['username']);
+        flash_set('success', 'GitHub account unlinked.');
+        redirect('settings.php#github');
+    }
+
     if (!empty($_POST['new_recovery_key'])) {
         $_SESSION['pending_recovery_key'] = user_update_recovery_key((int)$u['id']);
         log_activity('recovery_key_generated', $u['username']);
@@ -432,6 +440,30 @@ page_header('Settings');
                             <a class="btn btn-outline-light" href="profile.php?id=<?= (int)$u['id'] ?>">View profile</a>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            <div class="col-12" id="github">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="h4 mb-3">🐙 GitHub</h2>
+                        <?php if (!empty($u['github_id'])): ?>
+                            <p class="text-secondary small mb-3">Connected as
+                                <a class="link-light" href="<?= e((string)($u['github_username'] ?? '')) ?>" target="_blank" rel="noopener">@<?= e($u['github_username']) ?></a>.
+                                You can log in with GitHub, and your avatar is used here.</p>
+                            <form method="post" action="settings.php#github">
+                                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                <input type="hidden" name="github_unlink" value="1">
+                                <button class="btn btn-outline-danger" type="submit">Disconnect GitHub</button>
+                            </form>
+                        <?php else: ?>
+                            <p class="text-secondary small mb-3">Connect a GitHub account to sign in without a password and use your GitHub avatar. One click, nothing is posted to GitHub.</p>
+                            <a class="btn btn-outline-light" href="github_oauth.php">
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="vertical-align:-2px;margin-right:4px;"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+                                Connect GitHub
+                            </a>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
 
