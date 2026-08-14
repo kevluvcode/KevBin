@@ -1,0 +1,41 @@
+# PasteBin security and routing
+
+ErrorDocument 403 /403.php
+ErrorDocument 404 /404.php
+
+Options -Indexes
+ServerSignature Off
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Short links: /s/Abc123
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^s/([A-Za-z0-9]{3,16})/?$ s.php?code=$1 [L,QSA]
+
+    # Short URLs: /Abc12345 or /Abc12345/raw
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^([A-Za-z0-9]{1,12})/raw/?$ view.php?id=$1&raw=1 [L,QSA]
+
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^([A-Za-z0-9]{1,12})/?$ view.php?id=$1 [L,QSA]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "no-referrer"
+</IfModule>
+
+<IfModule mod_authz_core.c>
+    <Files "config.php">
+        Require all denied
+    </Files>
+
+    <Files "db.php">
+        Require all denied
+    </Files>
+</IfModule>
