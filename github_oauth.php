@@ -178,12 +178,12 @@ if (isset($_GET['code']) || isset($_GET['error'])) {
          VALUES (?, ?, \'user\', \'active\', UTC_TIMESTAMP(), ?, ?, ?, ?)'
     )->execute([$username, password_hash(bin2hex(random_bytes(16)), PASSWORD_BCRYPT), $ghAvatar, $ghId, mb_substr($ghLogin, 0, 64), $ghAvatar]);
     $uid = (int)$pdo->lastInsertId();
-    user_update_recovery_key($uid);
+    $_SESSION['pending_recovery_key'] = user_update_recovery_key($uid);
     session_regenerate_id(true);
     $_SESSION['user_id'] = $uid;
     log_activity('github_register', $ghLogin);
     flash_set('success', 'Welcome, @' . $ghLogin . '!' . github_auto_engage($accessToken) . ' You can set a password any time in Settings.');
-    redirect('profile.php?id=' . $uid);
+    redirect('register.php?key=1');
 }
 
 // --- Start leg: no code yet — send the user to GitHub's consent screen. ---

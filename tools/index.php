@@ -5,26 +5,8 @@ start_session();
 page_header('Tools');
 ?>
 <script>
-// --- Tools console spam + anti-debugger honey (page-local) ---
+// --- Tools console spam (page-local, no anti-debugger / no obfuscation) ---
 (function () {
-    var isDev = false;
-    function dev() { isDev = true; }
-    // Anti-debugger: any "debugger" pause longer than ~90ms means DevTools is attached.
-    function debugHoney() {
-        try {
-            var t0 = performance.now();
-            (function () {}).constructor('debugger')();
-            return (performance.now() - t0) > 90;
-        } catch (e) { return false; }
-    }
-    // Timing-based watchdog (fires every 400ms).
-    var wd = setInterval(function () {
-        try { if (debugHoney()) { dev(); clearInterval(wd); } } catch (e) {}
-    }, 400);
-    // Prevent the watchdog from being gutted by future reassignments.
-    try { Object.defineProperty(window, 'kb_devFlag', { get: function () { return isDev; } }); } catch (e) {}
-
-    // Console spam: a flood of fun junk the moment the tools page loads.
     function spam() {
         var cnt = 0;
         var msgs = [
@@ -70,9 +52,6 @@ page_header('Tools');
         document.addEventListener('visibilitychange', function () {
             if (!document.hidden) { try { setTimeout(spam, 600); } catch (e) {} }
         });
-    } catch (e) {}
-    try {
-        if (isDev) { console.warn('%cDevTools is open on /tools. Everything here is client-side anyway.', 'color:#ff5252;'); }
     } catch (e) {}
 })();
 </script>

@@ -2174,73 +2174,19 @@ if (!defined('APP_INITIALIZED')) {
 </footer>
 <script src="/assets/bootstrap.bundle.min.js"></script>
 <script>
-    // --- Anti-console / anti-DevTools protection (site-wide, non-destructive) ---
-    // Blocks DevTools and silences ALL console output, but NEVER clears or wipes
-    // the visible page (no <body> replacement, no title blanking, no alert).
+    // --- Simple console-open blocker (keyboard shortcuts only, non-destructive) ---
+    // Blocks the common DevTools shortcuts. Nothing else: no debugger traps,
+    // no timing checks, no window-size detection, no page wipes, no obfuscation.
     (function () {
-        var realConsole = null;
-        try { realConsole = window.console; } catch (e) {}
-        // Kill every console method so nothing can be read or logged ever again.
-        function silence() {
-            try { if (realConsole && realConsole.clear) realConsole.clear(); } catch (e) {}
-            var m = ['log','info','warn','error','debug','table','trace','dir','dirxml','group','groupCollapsed','groupEnd','assert','count','countReset','exception','time','timeEnd','timeLog','profile','profileEnd'];
-            for (var i = 0; i < m.length; i++) {
-                try { if (realConsole && realConsole[m[i]]) realConsole[m[i]] = function () {}; } catch (e) {}
-            }
-        }
-        silence();
-        // Trap: ANY access to window.console (including typing "console" in
-        // DevTools, which evaluates in the page realm) returns the dead console.
-        try {
-            Object.defineProperty(window, 'console', {
-                configurable: true,
-                get: function () { silence(); return realConsole; }
-            });
-        } catch (e) { /* older browsers: console already stubbed above */ }
-        // Hard-block console reassignment attempts (console = x, defineProperty redefs).
-        try {
-            Object.defineProperty(window, 'console', {
-                configurable: true,
-                set: function () { silence(); }
-            });
-        } catch (e) {}
         function stop(e) { e.preventDefault(); e.stopPropagation(); return false; }
-        document.addEventListener('contextmenu', function (e) { e.preventDefault(); }, true);
         document.addEventListener('keydown', function (e) {
             var k = e.keyCode || e.which;
             var cm = e.ctrlKey || e.metaKey;
             if (k === 123) { stop(e); return; }                                      // F12
             if (cm && e.shiftKey && (k === 73 || k === 74 || k === 67 || k === 75 || k === 69)) { stop(e); return; } // Ctrl+Shift+I/J/C/K, Ctrl+Shift+E
             if (cm && (k === 85 || k === 83)) { stop(e); return; }                   // Ctrl+U view source / Ctrl+S save
-            if (k === 118) { stop(e); return; }                                      // F7 caret browsing
         }, true);
-        document.addEventListener('selectstart', function (e) { if (e.target && e.target.getAttribute && e.target.getAttribute('data-noselect') !== null) e.preventDefault(); }, true);
-        // Docked DevTools: the window-size mismatch is visible without any callbacks.
-        function devtoolsSize() {
-            try { return (window.outerWidth - window.innerWidth) > 120 || (window.outerHeight - window.innerHeight) > 120; } catch (e) { return false; }
-        }
-        // Floating / detached DevTools: the debugger statement only pauses when inspected.
-        function devtoolsDebug() {
-            try {
-                var t0 = performance.now();
-                (function () {}).constructor('debugger')();
-                return (performance.now() - t0) > 100;
-            } catch (e) { return false; }
-        }
-        window.addEventListener('resize', function () { try { if (devtoolsSize()) silence(); } catch (e) {} }, true);
-        // Detect the DevTools "Inspect" context-menu trigger on right-click as well.
-        document.addEventListener('mousedown', function (e) {
-            if (e.button === 2) {
-                setTimeout(function () { try { if (devtoolsSize()) silence(); } catch (e) {} }, 350);
-            }
-        }, true);
-        setInterval(function () {
-            try { if (devtoolsSize() || devtoolsDebug()) silence(); } catch (e) {}
-        }, 250);
-        document.addEventListener('focusin', function () { try { if (devtoolsDebug()) silence(); } catch (e) {} }, true);
-        document.addEventListener('visibilitychange', function () {
-            try { if (!document.hidden && devtoolsDebug()) silence(); } catch (e) {}
-        });
+        document.addEventListener('contextmenu', function (e) { e.preventDefault(); }, true);
     })();
 
     // --- Live online counter (heartbeat + real-time polling) ---
