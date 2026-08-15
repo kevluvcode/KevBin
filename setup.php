@@ -28,6 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
         $pdo = db();
+        // Create EVERY table the app needs (idempotent) — the inline block below
+        // only covers the base set, so this fills in wiki, uploads, social,
+        // link-tracking, online and the rest on a brand-new database.
+        schema_create_all();
         if ($needsInstall) {
             // Base schema — same shape the app expects (idempotent).
             $pdo->exec('CREATE TABLE IF NOT EXISTS users (

@@ -168,13 +168,19 @@ page_header($paste['title']);
                         <?= $paste['pin'] ? 'Unpin (featured)' : 'Feature pin' ?>
                     </button>
                 </form>
-                <a class="btn btn-sm btn-outline-light" href="edit.php?id=<?= e($paste['id']) ?>">Edit</a>
             <?php endif; ?>
             <?php if (is_staff()): ?>
+                <a class="btn btn-sm btn-outline-light" href="edit.php?id=<?= e($paste['id']) ?>">Edit</a>
                 <form method="post" action="delete.php" onsubmit="return confirm('Delete this paste? Staff action.');">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="id" value="<?= e($paste['id']) ?>">
                     <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+                </form>
+            <?php elseif ($me !== null && (int)$paste['user_id'] === (int)$me['id']): ?>
+                <form method="post" action="delete.php" onsubmit="return confirm('Request deletion of your paste? Staff must approve it.');">
+                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="id" value="<?= e($paste['id']) ?>">
+                    <button class="btn btn-outline-danger btn-sm" type="submit">Request deletion</button>
                 </form>
             <?php endif; ?>
         </div>

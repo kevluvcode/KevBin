@@ -63,6 +63,13 @@ $CFG = [
     'unlock_rate_limit' => 20,
     'link_rate_limit' => 10,
     'api_proxy_rate_limit' => 120,
+    'file_upload_rate_limit' => 10,
     'rate_window_seconds' => 600,
     'per_page' => 20,
+
+    // File uploads (files.php). Storage folder is relative to htdocs and must
+    // exist on the server; per-file size cap and the allow-listed extensions.
+    'uploads_dir' => 'uploads/',
+    'upload_max_mb' => 20,
+    'upload_exts' => 'png,jpg,jpeg,gif,webp,mp3,ogg,wav,mp4,webm,pdf,txt,md,json,csv,log,xml,yaml,zip,gz,doc,docx,xls,xlsx,ppt,pptx',
 ];

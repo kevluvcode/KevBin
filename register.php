@@ -144,7 +144,7 @@ function downloadKey() {
                 <div class="mb-3">
                     <label class="form-label">Security check</label>
                     <div class="d-flex align-items-center gap-2 mb-2">
-                        <img src="captcha.php?v=<?= time() ?>" alt="captcha" width="150" height="52"
+                        <img src="captcha.php?v=<?= time() ?>" alt="captcha" width="160" height="56"
                             style="border-radius:8px;border:1px solid var(--line);">
                         <button type="button" class="btn btn-sm btn-outline-light" onclick="this.previousElementSibling.src='captcha.php?rot=1&v='+Date.now()"
                             title="New captcha">↻</button>

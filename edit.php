@@ -25,10 +25,11 @@ if (!$paste) {
 }
 
 $isAdmin = is_admin();
+$isStaff = is_staff();
 $isOwner = $me !== null && (int)$me['id'] === (int)$paste['user_id'];
 $validKey = is_string($paste['edit_key']) && $key !== '' && hash_equals((string)$paste['edit_key'], $key);
 
-if (!$isAdmin && !$validKey) {
+if (!$isStaff && !$validKey) {
     friendly_error('Invalid edit key. You do not have permission to edit this paste.', 403);
 }
 
@@ -45,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $newTitle = trim((string)($_POST['title'] ?? ''));
     $newContent = (string)($_POST['content'] ?? '');
-    $newColor = $isAdmin ? clean_hex_color((string)($_POST['paste_color'] ?? '')) : (string)$paste['paste_color'];
+    $newColor = $isStaff ? clean_hex_color((string)($_POST['paste_color'] ?? '')) : (string)$paste['paste_color'];
     $newDescription = trim((string)($_POST['description'] ?? ''));
     $newTags = trim((string)($_POST['tags'] ?? ''));
     $newLockPassword = trim((string)($_POST['password'] ?? ''));
@@ -69,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Content cannot be empty.';
     } elseif (mb_strlen($newContent) > (int)$cfg['max_content_chars']) {
         $error = 'Content too long (max ' . $cfg['max_content_chars'] . ' chars).';
-    } else {
+    } elseif ($isStaff) {
         db()->prepare('UPDATE pastes SET title = ?, description = ?, tags = ?, password_hash = ?, content = ?, paste_color = ? WHERE id = ?')
             ->execute([
                 $newTitle,
@@ -83,10 +84,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         log_activity('edit', $id . ' by ' . ($me['username'] ?? 'key'));
         flash_set('success', 'Paste updated.');
         redirect('view.php?id=' . urlencode($id));
+    } else {
+        // Non-staff edit (via edit key): route through the approval queue.
+        $meta = json_encode([
+            'title' => $newTitle,
+            'description' => $newDescription,
+            'tags' => $newTags,
+            'color' => $newColor,
+        ], JSON_UNESCAPED_UNICODE);
+        db()->prepare(
+            'INSERT INTO moderation_queue
+                (action_type, target_type, ref_id, scope, slug, title, old_content, new_content, note, requested_by)
+             VALUES (\'edit\', \'paste\', ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $id,
+            'paste',
+            $id,
+            $newTitle,
+            (string)$paste['content'],
+            $newContent,
+            $meta,
+            $me !== null ? (int)$me['id'] : null,
+        ]);
+        log_activity('moderation_queued', 'paste edit ' . $id);
+        flash_set('success', 'Your edit has been submitted for staff approval.');
+        redirect('view.php?id=' . urlencode($id));
     }
 }
 
-$keyArg = $isAdmin ? '' : '&key=' . urlencode($key);
+$keyArg = $isStaff ? '' : '&key=' . urlencode($key);
 
 page_header('Edit paste');
 ?>
@@ -109,9 +135,9 @@ page_header('Edit paste');
                         <label class="form-label">Author</label>
                         <input class="form-control" type="text" value="<?= e($paste['author']) ?>" readonly>
                     </div>
-                    <?php if ($isAdmin): ?>
+                    <?php if ($isStaff): ?>
                         <div class="col-md-6">
-                            <label class="form-label">Paste color (admin only)</label>
+                            <label class="form-label">Paste color (staff only)</label>
                             <?= color_select('paste_color', (string)$paste['paste_color']) ?>
                         </div>
                     <?php endif; ?>

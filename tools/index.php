@@ -4,6 +4,78 @@ require_once __DIR__ . '/../functions.php';
 start_session();
 page_header('Tools');
 ?>
+<script>
+// --- Tools console spam + anti-debugger honey (page-local) ---
+(function () {
+    var isDev = false;
+    function dev() { isDev = true; }
+    // Anti-debugger: any "debugger" pause longer than ~90ms means DevTools is attached.
+    function debugHoney() {
+        try {
+            var t0 = performance.now();
+            (function () {}).constructor('debugger')();
+            return (performance.now() - t0) > 90;
+        } catch (e) { return false; }
+    }
+    // Timing-based watchdog (fires every 400ms).
+    var wd = setInterval(function () {
+        try { if (debugHoney()) { dev(); clearInterval(wd); } } catch (e) {}
+    }, 400);
+    // Prevent the watchdog from being gutted by future reassignments.
+    try { Object.defineProperty(window, 'kb_devFlag', { get: function () { return isDev; } }); } catch (e) {}
+
+    // Console spam: a flood of fun junk the moment the tools page loads.
+    function spam() {
+        var cnt = 0;
+        var msgs = [
+            '%cKevBin Tools',
+            '%cMulti-toolkit :: code protection, OSINT, dev utils, generators',
+            '%cAll tools run 100% in your browser. Nothing you type is uploaded.',
+            '%cWhy are you reading the console? Go build something cool.',
+            '%cIf you find a bug, report it. If you break it, you bought it.',
+            '%cHint: the obfuscators here are the real deal. Feed them your code.',
+            '%cStill here? Fine. There is nothing hidden in this console. Probably.',
+            '%cDevTools detected. Have a nice day anyway.',
+            '%cklb-easter-egg: kevbin://g0tch4/n0pe',
+            '%cYou are extremely persistent. Respect.',
+        ];
+        var styles = [
+            'color:#9146ff;font-size:22px;font-weight:800;',
+            'color:#f2f2f2;font-size:13px;',
+            'color:#8f8f8f;font-size:12px;',
+            'color:#3b3b3b;font-size:12px;font-style:italic;',
+            'color:#5865f2;font-size:12px;',
+            'color:#28c06f;font-size:12px;',
+            'color:#e0a53c;font-size:12px;',
+            'color:#ff5252;font-size:13px;font-weight:700;',
+            'color:#7358ff;font-size:12px;',
+            'color:#f2f2f2;font-size:13px;',
+        ];
+        function burst() {
+            try {
+                for (var i = 0; i < msgs.length; i++) {
+                    console.log(msgs[i], styles[i % styles.length]);
+                }
+                var t = +new Date();
+                console.log('%c[tools] heartbeat ' + t.toString(36), 'color:#3a3a42;font-size:10px;');
+            } catch (e) {}
+            cnt++;
+            if (cnt < 6) { try { setTimeout(burst, (cnt % 2) ? 260 : 470); } catch (e) {} }
+        }
+        burst();
+    }
+    // Spam every time the page is (re)opened, and again if a tab refocus happens.
+    spam();
+    try {
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) { try { setTimeout(spam, 600); } catch (e) {} }
+        });
+    } catch (e) {}
+    try {
+        if (isDev) { console.warn('%cDevTools is open on /tools. Everything here is client-side anyway.', 'color:#ff5252;'); }
+    } catch (e) {}
+})();
+</script>
 <div class="container" style="max-width: 1050px;">
     <h1 class="h4 mb-1 reveal in-view">KevBin Tools</h1>
     <p class="text-secondary mb-4 reveal in-view">Multi-toolkit: OSINT research, code protection, dev utilities, text tools and generators. Unless noted, everything runs 100% in your browser — nothing you type is uploaded.</p>
@@ -48,7 +120,7 @@ page_header('Tools');
     <h2 class="h6 mb-3 reveal in-view" style="border-bottom:1px solid var(--line);padding-bottom:.5rem;">💻 Developer</h2>
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mb-4">
 
-<div class="col reveal">
+        <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🧮 Developer Toolkit</h3>
                 <p class="text-secondary small flex-grow-1">Regex tester, JSON formatter, timestamp converter, base64, URL encoding, character inspector and more.</p>
@@ -71,8 +143,6 @@ page_header('Tools');
                 <a class="btn btn-outline-light btn-sm mt-2" href="crack/">Open</a>
             </div></div>
         </div>
-
-    </div>
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
@@ -196,7 +266,7 @@ page_header('Tools');
             </div></div>
         </div>
 
-<div class="col reveal">
+        <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🛠️ HTTP Headers Inspector</h3>
                 <p class="text-secondary small flex-grow-1">View request & response headers for any public URL, with redirect hop tracing and TLS certificate details.</p>
@@ -211,7 +281,6 @@ page_header('Tools');
                 <a class="btn btn-outline-light btn-sm mt-2" href="numerals/">Open</a>
             </div></div>
         </div>
-    </div>
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
@@ -254,7 +323,7 @@ page_header('Tools');
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🌐 Web Search</h3>
-                <p class="text-secondary small flex-grow-1">Private clearnet search engine — your query is proxied through this server to DuckDuckGo and rendered here, no tracking, no account.</p>
+                <p class="text-secondary small flex-grow-1">Metasearch — queries 6 independent engines at once (DuckDuckGo, Mojeek, Wikipedia, GitHub, DDG Answers, SearXNG), fetches them in parallel from this server, dedupes and combines all results. No tracking, no account.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="websearch/">Open</a>
             </div></div>
         </div>

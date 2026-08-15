@@ -152,6 +152,111 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('admin.php?tab=requests');
     }
 
+    // ——— Moderation queue: approve / reject non-staff edits & deletions (admins only) ———
+    if (in_array($action, ['modapprove', 'modreject'], true)) {
+        if (!$isAdmin) {
+            flash_set('error', 'Only admins can approve edits.');
+            redirect('admin.php?tab=modqueue');
+        }
+        $mqId = (int)($_POST['mq_id'] ?? 0);
+        $stmt = $pdo->prepare('SELECT * FROM moderation_queue WHERE id = ?');
+        $stmt->execute([$mqId]);
+        $mq = $stmt->fetch();
+        if (!$mq || $mq['status'] !== 'pending') {
+            flash_set('error', 'Request not found or already handled.');
+            redirect('admin.php?tab=modqueue');
+        }
+        if ($action === 'modreject') {
+            $pdo->prepare("UPDATE moderation_queue SET status = 'rejected', reviewed_by = ?, reviewed_at = UTC_TIMESTAMP() WHERE id = ?")
+                ->execute([(int)$me['id'], $mqId]);
+            log_activity('moderation_rejected', $mq['target_type'] . ' ' . $mq['action_type'] . ' #' . $mqId);
+            flash_set('success', 'Request rejected.');
+            redirect('admin.php?tab=modqueue');
+        }
+
+        $pdo->beginTransaction();
+        try {
+            if ($mq['target_type'] === 'wiki' && $mq['action_type'] === 'edit') {
+                // Apply the pending wiki edit. Insert the page if it doesn't exist.
+                $slug = $mq['slug'];
+                $title = $mq['title'];
+                $content = $mq['new_content'];
+                $scope = $mq['scope'] ?? 'community';
+                $ownerId = null;
+                if ($scope === 'personal' && $mq['requested_by'] !== null) {
+                    $ownerId = (int)$mq['requested_by'];
+                }
+                $pageId = $mq['ref_id'] !== null ? (int)$mq['ref_id'] : 0;
+                if ($pageId > 0) {
+                    // Use the page's stored owner_id so we don't steal ownership.
+                    $pageRow = $pdo->prepare('SELECT owner_id FROM wiki_pages WHERE id = ?');
+                    $pageRow->execute([$pageId]);
+                    $pr = $pageRow->fetch();
+                    if ($pr !== false) {
+                        $ownerId = $pr['owner_id'];
+                    }
+                    $pdo->prepare('UPDATE wiki_pages SET slug = ?, title = ?, content = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?')
+                        ->execute([$slug, $title, $content, $pageId]);
+                } else {
+                    $pdo->prepare(
+                        'INSERT INTO wiki_pages (scope, owner_id, slug, title, content, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())'
+                    )->execute([$scope, $ownerId, $slug, $title, $content]);
+                    $pageId = (int)$pdo->lastInsertId();
+                }
+                $pdo->prepare(
+                    'INSERT INTO wiki_revisions (page_id, user_id, content, note, created_at)
+                     VALUES (?, ?, ?, ?, UTC_TIMESTAMP())'
+                )->execute([$pageId, $mq['requested_by'], $content, mb_substr((string)$mq['note'], 0, 255)]);
+                log_activity('moderation_approved', 'wiki edit ' . $scope . '/' . $slug);
+                flash_set('success', 'Wiki edit approved and applied.');
+            } elseif ($mq['target_type'] === 'wiki' && $mq['action_type'] === 'delete') {
+                $pageId = $mq['ref_id'] !== null ? (int)$mq['ref_id'] : 0;
+                if ($pageId > 0) {
+                    $pdo->prepare('DELETE FROM wiki_revisions WHERE page_id = ?')->execute([$pageId]);
+                    $pdo->prepare('DELETE FROM wiki_pages WHERE id = ?')->execute([$pageId]);
+                }
+                log_activity('moderation_approved', 'wiki delete ' . ($mq['scope'] ?? '') . '/' . ($mq['slug'] ?? ''));
+                flash_set('success', 'Wiki page deletion approved.');
+            } elseif ($mq['target_type'] === 'paste' && $mq['action_type'] === 'edit') {
+                $pid = (string)$mq['ref_id'];
+                $meta = json_decode((string)$mq['note'], true);
+                if (!is_array($meta)) {
+                    $meta = [];
+                }
+                $pdo->prepare(
+                    'UPDATE pastes SET title = ?, description = ?, tags = ?, paste_color = ?, content = ? WHERE id = ?'
+                )->execute([
+                    mb_substr((string)($meta['title'] ?? $mq['title'] ?? 'Untitled'), 0, 120),
+                    $meta['description'] !== '' ? mb_substr((string)$meta['description'], 0, 255) : null,
+                    $meta['tags'] !== '' ? mb_substr((string)$meta['tags'], 0, 255) : null,
+                    clean_hex_color((string)($meta['color'] ?? '')),
+                    (string)$mq['new_content'],
+                    $pid,
+                ]);
+                log_activity('moderation_approved', 'paste edit ' . $pid);
+                flash_set('success', 'Paste edit approved and applied.');
+            } elseif ($mq['target_type'] === 'paste' && $mq['action_type'] === 'delete') {
+                $pid = (string)$mq['ref_id'];
+                $pdo->prepare('DELETE FROM pins WHERE paste_id = ?')->execute([$pid]);
+                $pdo->prepare('DELETE FROM notifications WHERE paste_id = ?')->execute([$pid]);
+                $pdo->prepare('DELETE FROM pastes WHERE id = ?')->execute([$pid]);
+                log_activity('moderation_approved', 'paste delete ' . $pid);
+                flash_set('success', 'Paste deletion approved.');
+            } else {
+                throw new RuntimeException('Unknown moderation request type.');
+            }
+            $pdo->prepare("UPDATE moderation_queue SET status = 'approved', reviewed_by = ?, reviewed_at = UTC_TIMESTAMP() WHERE id = ?")
+                ->execute([(int)$me['id'], $mqId]);
+            $pdo->commit();
+        } catch (Throwable $t) {
+            $pdo->rollBack();
+            log_error('error', 'Moderation approve failed: ' . $t->getMessage(), __FILE__, __LINE__, (int)$me['id']);
+            flash_set('error', 'Could not apply the request: ' . $t->getMessage());
+        }
+        redirect('admin.php?tab=modqueue');
+    }
+
     flash_set('error', 'Unknown action.');
     redirect('admin.php');
 }
@@ -214,6 +319,23 @@ foreach ($reports as $r) {
     }
 }
 
+$modQueue = [];
+$pendingCount = 0;
+if ($isAdmin) {
+    $modQueue = $pdo->query(
+        "SELECT m.*, u.username AS requester_name
+         FROM moderation_queue m
+         LEFT JOIN users u ON u.id = m.requested_by
+         ORDER BY (m.status = 'pending') DESC, m.created_at ASC
+         LIMIT 200"
+    )->fetchAll();
+    foreach ($modQueue as $mq) {
+        if ($mq['status'] === 'pending') {
+            $pendingCount++;
+        }
+    }
+}
+
 page_header($isAdmin ? 'Admin' : 'Staff');
 ?>
 <div class="container" style="max-width: 1100px;">
@@ -223,8 +345,10 @@ page_header($isAdmin ? 'Admin' : 'Staff');
             <li class="nav-item"><a class="nav-link <?= $tab === 'users' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=users')) ?>">Users</a></li>
             <li class="nav-item"><a class="nav-link <?= $tab === 'pastes' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=pastes')) ?>#pastes">Pastes</a></li>
             <li class="nav-item"><a class="nav-link <?= $tab === 'bans' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=bans')) ?>">IP Bans (<?= count($bannedIps) ?>)</a></li>
+            <li class="nav-item"><a class="nav-link <?= $tab === 'modqueue' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=modqueue')) ?>">Approvals (<?= $pendingCount ?>)</a></li>
         <?php endif; ?>
         <li class="nav-item"><a class="nav-link <?= $tab === 'requests' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=requests')) ?>">Requests (<?= $openCount ?>)</a></li>
+        <li class="nav-item"><a class="nav-link" href="<?= e(url('admin_errors.php')) ?>">Error Log</a></li>
     </ul>
 
     <?php if ($tab === 'requests'): ?>
@@ -282,6 +406,75 @@ page_header($isAdmin ? 'Admin' : 'Staff');
                             <button class="btn btn-sm btn-outline-danger" type="submit" name="action" value="reportdelete"
                                 onclick="return confirm('Delete this request permanently?');">Delete</button>
                         </form>
+                    </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+
+    <?php elseif ($tab === 'modqueue'): ?>
+        <div class="list-group reveal in-view">
+            <?php if (count($modQueue) === 0): ?>
+                <div class="alert alert-secondary">No moderation requests yet. Non-staff wiki/paste edits and deletions land here for approval.</div>
+            <?php else: ?>
+                <?php foreach ($modQueue as $mq): ?>
+                    <?php
+                    $mqLabel = [
+                        'wiki-edit' => 'Wiki page edit',
+                        'wiki-delete' => 'Wiki page deletion',
+                        'paste-edit' => 'Paste edit',
+                        'paste-delete' => 'Paste deletion',
+                    ];
+                    $mqType = $mq['target_type'] . '-' . $mq['action_type'];
+                    $mqBadge = $mq['status'] === 'pending'
+                        ? '<span class="badge bg-warning text-dark">PENDING</span>'
+                        : ($mq['status'] === 'approved'
+                            ? '<span class="badge bg-success">APPROVED</span>'
+                            : '<span class="badge bg-secondary">REJECTED</span>');
+                    $reqBy = e($mq['requester_name'] ?? ('user #' . (int)$mq['requested_by']));
+                    ?>
+                    <div class="list-group-item">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="fw-semibold">#<?= (int)$mq['id'] ?></span>
+                            <?= $mqBadge ?>
+                            <span class="badge bg-secondary"><?= e($mqLabel[$mqType] ?? $mqType) ?></span>
+                            <?php if ($mq['title'] !== null && $mq['title'] !== ''): ?>
+                                <span class="text-truncate" style="max-width: 320px;"><?= e($mq['title']) ?></span>
+                            <?php endif; ?>
+                            <span class="text-secondary small ms-auto">
+                                by <?= $reqBy ?> ·
+                                <?= e(gmdate('Y-m-d H:i', strtotime($mq['created_at'] . ' UTC'))) ?> UTC
+                            </span>
+                        </div>
+                        <?php if ($mq['target_type'] === 'wiki' && $mq['note'] !== null && $mq['note'] !== '' && $mq['action_type'] !== 'delete'): ?>
+                            <p class="small text-secondary mb-1">Note: <?= e($mq['note']) ?></p>
+                        <?php endif; ?>
+                        <?php if ($mq['action_type'] === 'edit' && $mq['new_content'] !== null && $mq['new_content'] !== ''): ?>
+                            <?php if ($mq['target_type'] === 'paste' && $mq['note'] !== null && $mq['note'] !== ''): ?>
+                                <?php $mqMeta = json_decode((string)$mq['note'], true);
+                                if (is_array($mqMeta) && ($mqMeta['description'] ?? '' !== '' || $mqMeta['tags'] ?? '' !== '')): ?>
+                                    <p class="small text-secondary mb-1">
+                                        Desc: <?= e((string)($mqMeta['description'] ?? '')) ?> ·
+                                        Tags: <?= e((string)($mqMeta['tags'] ?? '')) ?>
+                                    </p>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            <details class="small">
+                                <summary class="text-secondary">Old → New content</summary>
+                                <pre class="my-1 p-2 bg-body-tertiary rounded" style="white-space:pre-wrap;max-height:180px;overflow:auto;"><?= e($mq['old_content']) ?></pre>
+                                <hr class="my-1">
+                                <pre class="my-1 p-2 bg-body-tertiary rounded" style="white-space:pre-wrap;max-height:300px;overflow:auto;"><?= e($mq['new_content']) ?></pre>
+                            </details>
+                        <?php endif; ?>
+                        <?php if ($mq['status'] === 'pending'): ?>
+                            <form method="post" action="<?= e(url('admin.php?tab=modqueue')) ?>" class="d-inline-flex gap-2 mt-2">
+                                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                <input type="hidden" name="mq_id" value="<?= (int)$mq['id'] ?>">
+                                <button class="btn btn-sm btn-success" type="submit" name="action" value="modapprove"
+                                    onclick="return confirm('Approve and apply this change?');">Approve</button>
+                                <button class="btn btn-sm btn-outline-danger" type="submit" name="action" value="modreject"
+                                    onclick="return confirm('Reject this request?');">Reject</button>
+                            </form>
+                        <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
             <?php endif; ?>

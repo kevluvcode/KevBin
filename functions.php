@@ -1,6 +1,25 @@
 <?php
 require_once __DIR__ . '/db.php';
 
+// Decoder for obfuscated HTML chunks stored in the source files (XOR + base64).
+// The HTML parts of the templates are encoded so the raw markup is not readable
+// in the source; every page decodes its own chunks at render time via h().
+function h(string $s): string
+{
+    static $key = 'k3vB1n!~h7ml_enc@2026';
+    $raw = base64_decode($s, true);
+    if ($raw === false) {
+        return '';
+    }
+    $klen = strlen($key);
+    $n = strlen($raw);
+    $out = '';
+    for ($i = 0; $i < $n; $i++) {
+        $out .= $raw[$i] ^ $key[$i % $klen];
+    }
+    return $out;
+}
+
 if (!defined('APP_INITIALIZED')) {
     define('APP_INITIALIZED', true);
 
@@ -121,7 +140,7 @@ if (!defined('APP_INITIALIZED')) {
 
     function csrf_verify(): bool
     {
-        $token = (string)($_POST['csrf'] ?? $_POST['csrf_token'] ?? '');
+        $token = (string)($_POST['csrf'] ?? $_POST['csrf_token'] ?? $_GET['csrf'] ?? '');
         return isset($_SESSION['csrf']) && hash_equals($_SESSION['csrf'], $token);
     }
 
@@ -159,6 +178,33 @@ if (!defined('APP_INITIALIZED')) {
             )->execute([client_ip(), $action, mb_substr($detail, 0, 500)]);
         } catch (Throwable $t) {
             error_log('[log_activity] ' . $t->getMessage());
+        }
+    }
+
+    // Persists an error into the error_logs table (admin viewer); falls back to
+    // the PHP error log if the DB write fails for any reason.
+    function log_error(string $level, string $message, string $file = '', int $line = 0, int $userId = 0): void
+    {
+        try {
+            $pdo = db();
+            $url = (string)($_SERVER['REQUEST_URI'] ?? '');
+            if (strlen($url) > 512) {
+                $url = mb_substr($url, 0, 512);
+            }
+            $pdo->prepare(
+                'INSERT INTO error_logs (level, message, file, line, url, ip, user_id, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())'
+            )->execute([
+                mb_substr($level, 0, 16),
+                mb_substr($message, 0, 5000),
+                $file !== '' ? mb_substr($file, 0, 255) : null,
+                $line > 0 ? $line : null,
+                $url,
+                client_ip(),
+                $userId > 0 ? $userId : null,
+            ]);
+        } catch (Throwable $t) {
+            error_log('[log_error] ' . $message . ' in ' . $file . ':' . $line . ' (' . $t->getMessage() . ')');
         }
     }
 
@@ -764,6 +810,30 @@ if (!defined('APP_INITIALIZED')) {
             } catch (Throwable $t) {
                 error_log('[schema_ensure reports] ' . $t->getMessage());
             }
+            // Approval queue: pending edits to wiki pages, pastes or deletions
+            // made by regular (non-staff) users. Staff approve or reject them.
+            if (!table_exists($pdo, 'moderation_queue')) {
+                $pdo->exec('CREATE TABLE IF NOT EXISTS moderation_queue (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    action_type VARCHAR(20) NOT NULL,
+                    target_type VARCHAR(20) NOT NULL,
+                    ref_id VARCHAR(40) NULL,
+                    scope VARCHAR(20) NULL,
+                    slug VARCHAR(190) NULL,
+                    title VARCHAR(255) NULL,
+                    old_content MEDIUMTEXT NULL,
+                    new_content MEDIUMTEXT NULL,
+                    note VARCHAR(1000) NULL,
+                    requested_by INT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT \'pending\',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by INT NULL,
+                    reviewed_at DATETIME NULL,
+                    KEY idx_modqueue_status (status, created_at),
+                    KEY idx_modqueue_target (target_type, ref_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+                log_activity('schema_migrate', 'created moderation_queue table');
+            }
             if (!table_exists($pdo, 'votes') || !table_exists($pdo, 'comments')) {
                 $pdo->exec(
                     'CREATE TABLE IF NOT EXISTS votes (
@@ -939,17 +1009,26 @@ if (!defined('APP_INITIALIZED')) {
                     $pdo->exec('ALTER TABLE geo_cache ADD COLUMN ' . $col . ' ' . $def);
                 }
             }
-            // Online presence (live "N online" counter).
+            // Online presence (live "N online" counter) — keyed by IP so a single
+            // person with many tabs/visits still counts as one.
             if (!table_exists($pdo, 'online')) {
                 $pdo->exec(
                     'CREATE TABLE IF NOT EXISTS online (
-                        token VARCHAR(64) PRIMARY KEY,
-                        ip VARCHAR(45) NOT NULL,
+                        ip VARCHAR(45) PRIMARY KEY,
                         last_seen DATETIME NOT NULL,
                         KEY idx_online_seen (last_seen)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
                 );
                 log_activity('schema_migrate', 'created online table');
+            } elseif (column_exists($pdo, 'online', 'token')) {
+                // Legacy token-keyed presence table — rebuild it keyed by IP so the
+                // live counter counts unique visitors, not unique sessions.
+                try {
+                    $pdo->exec('ALTER TABLE online DROP PRIMARY KEY, ADD PRIMARY KEY (ip), DROP COLUMN token');
+                    log_activity('schema_migrate', 'online table re-keyed by ip');
+                } catch (Throwable $t) {
+                    error_log('[schema_ensure online] ' . $t->getMessage());
+                }
             }
             // Wiki: site documentation, community wiki and personal wikis.
             if (!table_exists($pdo, 'wiki_pages')) {
@@ -981,6 +1060,43 @@ if (!defined('APP_INITIALIZED')) {
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
                 );
                 log_activity('schema_migrate', 'created wiki_pages/wiki_revisions tables');
+            }
+            // User file uploads (files.php) — binary content lives in the DB so no
+            // uploaded file is ever written into (or served from) the web root.
+            if (!table_exists($pdo, 'uploads')) {
+                schema_create_uploads($pdo);
+                log_activity('schema_migrate', 'created uploads table');
+            } elseif (!column_exists($pdo, 'uploads', 'file_data')) {
+                $pdo->exec('ALTER TABLE uploads ADD COLUMN file_data LONGBLOB NULL');
+                log_activity('schema_migrate', 'added uploads.file_data');
+            }
+            // Log of mirror links pushed to external file-hosters (files.php).
+            if (!table_exists($pdo, 'file_shares')) {
+                $pdo->exec('CREATE TABLE IF NOT EXISTS file_shares (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    file_id VARCHAR(16) NOT NULL,
+                    site VARCHAR(20) NOT NULL,
+                    url VARCHAR(500) NOT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY idx_fs_file (file_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+                log_activity('schema_migrate', 'created file_shares table');
+            }
+            // Persistent error log (admin viewer page reads this).
+            if (!table_exists($pdo, 'error_logs')) {
+                $pdo->exec('CREATE TABLE IF NOT EXISTS error_logs (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    level VARCHAR(16) NOT NULL DEFAULT \'error\',
+                    message TEXT NOT NULL,
+                    file VARCHAR(255) NULL,
+                    line INT NULL,
+                    url VARCHAR(512) NULL,
+                    ip VARCHAR(45) NULL,
+                    user_id INT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY idx_error_created (created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+                log_activity('schema_migrate', 'created error_logs table');
             }
             // Seed a friendly community wiki home page on first install.
             if (table_exists($pdo, 'wiki_pages')) {
@@ -1027,23 +1143,350 @@ if (!defined('APP_INITIALIZED')) {
 
     // ——— Online presence (live counter + heartbeat) ———
 
+    // Uploads table DDL (shared by the auto-migrator and fresh-install setup).
+    function schema_create_uploads($pdo): void
+    {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS uploads (
+                id VARCHAR(16) PRIMARY KEY,
+                user_id INT NULL,
+                filename VARCHAR(255) NOT NULL,
+                stored_name VARCHAR(48) NOT NULL,
+                mime VARCHAR(120) NOT NULL,
+                size BIGINT UNSIGNED NOT NULL,
+                file_data LONGBLOB NULL,
+                delete_key VARCHAR(32) NULL,
+                downloads INT UNSIGNED NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME NULL,
+                UNIQUE KEY uq_up_stored (stored_name),
+                KEY idx_up_user (user_id, created_at),
+                KEY idx_up_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+    }
+
+    // Full fresh-install schema. setup.php calls this once so EVERYTHING the app
+    // needs exists on a brand-new database (the auto-migrator can't, because it
+    // bails out early when the pastes table is still missing).
+    function schema_create_all(): void
+    {
+        $pdo = db();
+        $pdo->exec('CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            role VARCHAR(20) NOT NULL DEFAULT \'user\',
+            status VARCHAR(20) NOT NULL DEFAULT \'active\',
+            pfp VARCHAR(255) NULL,
+            banner VARCHAR(255) NULL,
+            profile_color VARCHAR(7) NULL,
+            alias VARCHAR(50) NULL,
+            profile_views INT UNSIGNED NOT NULL DEFAULT 0,
+            bio TEXT NULL,
+            location VARCHAR(100) NULL,
+            website VARCHAR(255) NULL,
+            discord VARCHAR(100) NULL,
+            telegram VARCHAR(100) NULL,
+            twitter VARCHAR(100) NULL,
+            youtube VARCHAR(255) NULL,
+            tagline VARCHAR(120) NULL,
+            pronouns VARCHAR(40) NULL,
+            skills VARCHAR(255) NULL,
+            bg_image VARCHAR(255) NULL,
+            occupation VARCHAR(120) NULL,
+            education VARCHAR(255) NULL,
+            languages VARCHAR(255) NULL,
+            hobbies VARCHAR(255) NULL,
+            quote VARCHAR(280) NULL,
+            birthdate DATE NULL,
+            status_msg VARCHAR(160) NULL,
+            github VARCHAR(100) NULL,
+            twitch VARCHAR(100) NULL,
+            tiktok VARCHAR(100) NULL,
+            instagram VARCHAR(100) NULL,
+            reddit VARCHAR(100) NULL,
+            snapchat VARCHAR(100) NULL,
+            bluesky VARCHAR(100) NULL,
+            threads VARCHAR(100) NULL,
+            linkedin VARCHAR(255) NULL,
+            bg_mode VARCHAR(10) NOT NULL DEFAULT \'none\',
+            bg_fit VARCHAR(10) NOT NULL DEFAULT \'cover\',
+            bg_color VARCHAR(7) NULL,
+            bg_gradient VARCHAR(300) NULL,
+            bg_veil TINYINT UNSIGNED NOT NULL DEFAULT 55,
+            bg_blur TINYINT(1) NOT NULL DEFAULT 0,
+            recovery_hash VARCHAR(128) NULL,
+            recovery_ip VARCHAR(255) NULL,
+            ui_mode VARCHAR(10) NOT NULL DEFAULT \'none\',
+            ui_color VARCHAR(7) NULL,
+            ui_gradient VARCHAR(300) NULL,
+            ui_layout VARCHAR(10) NOT NULL DEFAULT \'default\',
+            accent_color VARCHAR(7) NULL,
+            github_id VARCHAR(64) NULL,
+            github_username VARCHAR(64) NULL,
+            github_avatar VARCHAR(255) NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS pastes (
+            id VARCHAR(12) PRIMARY KEY,
+            title VARCHAR(120) NOT NULL,
+            description VARCHAR(255) NULL,
+            tags VARCHAR(255) NULL,
+            password_hash VARCHAR(255) NULL,
+            content LONGTEXT NOT NULL,
+            author VARCHAR(50) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NULL,
+            edit_key VARCHAR(32) NULL,
+            user_id INT NULL,
+            paste_color VARCHAR(7) NULL,
+            views INT UNSIGNED NOT NULL DEFAULT 0,
+            pin TINYINT(1) NOT NULL DEFAULT 0,
+            notify_followers TINYINT(1) NOT NULL DEFAULT 1,
+            KEY idx_pastes_created (created_at),
+            KEY idx_pastes_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS pins (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            paste_id VARCHAR(12) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_pin (user_id, paste_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS rate_limits (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            ip VARCHAR(45) NOT NULL,
+            bucket VARCHAR(32) NOT NULL,
+            hits INT NOT NULL DEFAULT 0,
+            window_start DATETIME NOT NULL,
+            UNIQUE KEY uq_bucket (ip, bucket)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS activity_log (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            ts DATETIME NOT NULL,
+            ip VARCHAR(45) NULL,
+            action VARCHAR(50) NOT NULL,
+            detail VARCHAR(500) NOT NULL DEFAULT \'\'
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS banned_ips (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            ip VARCHAR(45) NOT NULL,
+            reason VARCHAR(255) NOT NULL DEFAULT \'\',
+            banned_by INT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_banned_ip (ip),
+            KEY idx_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS reports (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            type VARCHAR(20) NOT NULL DEFAULT \'abuse\',
+            name VARCHAR(100) NOT NULL,
+            contact VARCHAR(120) NOT NULL,
+            target_url VARCHAR(255) NOT NULL,
+            details TEXT NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT \'open\',
+            ip VARCHAR(45) NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            resolution TEXT NULL,
+            resolved_by INT NULL,
+            resolved_at DATETIME NULL,
+            KEY idx_reports_status (status, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS votes (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            entity_type VARCHAR(10) NOT NULL,
+            entity_id VARCHAR(40) NOT NULL,
+            user_id INT NOT NULL,
+            vote TINYINT NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_vote (entity_type, entity_id, user_id),
+            KEY idx_vote_entity (entity_type, entity_id),
+            KEY idx_vote_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS comments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            entity_type VARCHAR(10) NOT NULL,
+            entity_id VARCHAR(40) NOT NULL,
+            user_id INT NOT NULL,
+            body TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_comment_entity (entity_type, entity_id, created_at),
+            KEY idx_comment_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS follows (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            follower_id INT NOT NULL,
+            followed_id INT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_follow (follower_id, followed_id),
+            KEY idx_follow_followed (followed_id),
+            KEY idx_follow_follower (follower_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS notifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            type VARCHAR(20) NOT NULL,
+            actor_id INT NULL,
+            paste_id VARCHAR(12) NULL,
+            message VARCHAR(255) NOT NULL,
+            is_read TINYINT(1) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_notif_user (user_id, is_read, created_at),
+            KEY idx_notif_paste (paste_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS links (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            code VARCHAR(16) NOT NULL,
+            user_id INT NULL,
+            manage_key VARCHAR(32) NULL,
+            target_url VARCHAR(2048) NOT NULL,
+            title VARCHAR(120) NULL,
+            tracking TINYINT(1) NOT NULL DEFAULT 1,
+            clicks INT UNSIGNED NOT NULL DEFAULT 0,
+            last_click DATETIME NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_links_code (code),
+            KEY idx_links_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS link_clicks (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            link_id INT NOT NULL,
+            ip VARCHAR(45) NULL,
+            ua VARCHAR(255) NULL,
+            referer VARCHAR(512) NULL,
+            country VARCHAR(64) NULL,
+            region VARCHAR(64) NULL,
+            city VARCHAR(64) NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_clicks_link (link_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS geo_cache (
+            ip VARCHAR(45) PRIMARY KEY,
+            country VARCHAR(64) NULL,
+            region VARCHAR(64) NULL,
+            city VARCHAR(64) NULL,
+            isp VARCHAR(120) NULL,
+            asn VARCHAR(120) NULL,
+            is_proxy TINYINT(1) NOT NULL DEFAULT 0,
+            is_vpn TINYINT(1) NOT NULL DEFAULT 0,
+            is_tor TINYINT(1) NOT NULL DEFAULT 0,
+            is_crawler TINYINT(1) NOT NULL DEFAULT 0,
+            fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS online (
+            ip VARCHAR(45) PRIMARY KEY,
+            last_seen DATETIME NOT NULL,
+            KEY idx_online_seen (last_seen)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS wiki_pages (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            scope ENUM(\'site\',\'community\',\'personal\') NOT NULL DEFAULT \'community\',
+            owner_id INT NULL,
+            slug VARCHAR(190) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            content MEDIUMTEXT NOT NULL,
+            locked TINYINT(1) NOT NULL DEFAULT 0,
+            views INT NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_wiki_slug (scope, owner_id, slug),
+            KEY idx_wiki_scope (scope, updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS wiki_revisions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            page_id INT NOT NULL,
+            user_id INT NULL,
+            content MEDIUMTEXT NOT NULL,
+            note VARCHAR(255) NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_wiki_rev (page_id, id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        schema_create_uploads($pdo);
+        $pdo->exec('CREATE TABLE IF NOT EXISTS file_shares (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            file_id VARCHAR(16) NOT NULL,
+            site VARCHAR(20) NOT NULL,
+            url VARCHAR(500) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_fs_file (file_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS error_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            level VARCHAR(16) NOT NULL DEFAULT \'error\',
+            message TEXT NOT NULL,
+            file VARCHAR(255) NULL,
+            line INT NULL,
+            url VARCHAR(512) NULL,
+            ip VARCHAR(45) NULL,
+            user_id INT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_error_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        $pdo->exec('CREATE TABLE IF NOT EXISTS moderation_queue (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            action_type VARCHAR(20) NOT NULL,
+            target_type VARCHAR(20) NOT NULL,
+            ref_id VARCHAR(40) NULL,
+            scope VARCHAR(20) NULL,
+            slug VARCHAR(190) NULL,
+            title VARCHAR(255) NULL,
+            old_content MEDIUMTEXT NULL,
+            new_content MEDIUMTEXT NULL,
+            note VARCHAR(1000) NULL,
+            requested_by INT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT \'pending\',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by INT NULL,
+            reviewed_at DATETIME NULL,
+            KEY idx_modqueue_status (status, created_at),
+            KEY idx_modqueue_target (target_type, ref_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+        // Seed a friendly community wiki home page.
+        $wikiCount = (int)$pdo->query(
+            "SELECT COUNT(*) FROM wiki_pages WHERE scope = 'community' AND owner_id IS NULL"
+        )->fetchColumn();
+        if ($wikiCount === 0) {
+            $home = "= Welcome to the Wiki\n\n"
+                . "This is the community wiki — a shared knowledge base, docs hub and how-to guide. "
+                . "Anyone with an account can create and edit pages, and every edit is saved in the page history.\n\n"
+                . "== Getting started\n\n"
+                . "* Click **+ New page** to create a page\n"
+                . "* Edit any page with the **✏ Edit** button\n"
+                . "* Link between pages with `[[Page Name]]`\n\n"
+                . "== Rules\n\n"
+                . "> Be helpful, stay on-topic, no spam. Admins can lock pages that get out of hand.";
+            $pdo->prepare(
+                "INSERT INTO wiki_pages (scope, owner_id, slug, title, content, created_at, updated_at)
+                 VALUES ('community', NULL, 'home', 'Welcome', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())"
+            )->execute([$home]);
+            $homeId = (int)$pdo->lastInsertId();
+            $pdo->prepare(
+                "INSERT INTO wiki_revisions (page_id, user_id, content, note, created_at)
+                 VALUES (?, NULL, ?, 'Initial page', UTC_TIMESTAMP())"
+            )->execute([$homeId, $home]);
+            log_activity('schema_create_all', 'seeded community wiki home page');
+        }
+        log_activity('schema_create_all', 'base schema created');
+    }
+
+    // ——— Online presence (live counter + heartbeat) ———
+
     // Visitors seen within this window count as "online".
     function online_window_seconds(): int { return 60; }
     // Rows older than this are purged on each heartbeat.
     function online_stale_seconds(): int { return 90; }
 
-    // Records this visitor's presence (session token) and returns the live count.
+    // Records this visitor's presence (keyed by IP) and returns the live count.
     function online_ping(?string $token = null): int
     {
         try {
             $pdo = db();
             $ip = client_ip();
-            $tok = ($token !== null && $token !== '' && strlen($token) <= 64)
-                ? $token
-                : (function_exists('session_id') && session_id() !== '' ? session_id() : $ip);
-            $pdo->prepare('INSERT INTO online (token, ip, last_seen) VALUES (?, ?, UTC_TIMESTAMP())
+            $pdo->prepare('INSERT INTO online (ip, last_seen) VALUES (?, UTC_TIMESTAMP())
                 ON DUPLICATE KEY UPDATE last_seen = UTC_TIMESTAMP()')
-                ->execute([$tok, $ip]);
+                ->execute([$ip]);
             $pdo->exec('DELETE FROM online WHERE last_seen < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ' . online_stale_seconds() . ' SECOND)');
             return online_count();
         } catch (Throwable $t) {
@@ -1319,7 +1762,8 @@ if (!defined('APP_INITIALIZED')) {
 
     function user_update_recovery_key(int $userId): string
     {
-        $key = strtoupper(bin2hex(random_bytes(32)));
+        // 48 bytes → 96 hex characters, grouped in fours = a long, high-entropy key.
+        $key = strtoupper(bin2hex(random_bytes(48)));
         $key = implode('-', str_split($key, 4));
         $encIp = null;
         if (function_exists('openssl_encrypt') && in_array('aes-256-ctr', openssl_get_cipher_methods(), true)) {
@@ -1360,7 +1804,7 @@ if (!defined('APP_INITIALIZED')) {
             $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/L/O/0/1
             $code = '';
             $len = strlen($chars) - 1;
-            for ($i = 0; $i < 5; $i++) {
+            for ($i = 0; $i < 6; $i++) {
                 $code .= $chars[random_int(0, $len)];
             }
             $_SESSION['captcha_code'] = $code;
@@ -1661,6 +2105,7 @@ if (!defined('APP_INITIALIZED')) {
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('users.php')) ?>">Users</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('short.php')) ?>">Shorten</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('links.php')) ?>">My Links</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= e(url('files.php')) ?>">Files</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('tools/')) ?>">Tools</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('wiki.php')) ?>">Wiki</a></li>
             </ul>
@@ -1729,48 +2174,34 @@ if (!defined('APP_INITIALIZED')) {
 </footer>
 <script src="/assets/bootstrap.bundle.min.js"></script>
 <script>
-    // --- Anti-console / anti-DevTools protection (site-wide, hard mode) ---
+    // --- Anti-console / anti-DevTools protection (site-wide, non-destructive) ---
+    // Blocks DevTools and silences ALL console output, but NEVER clears or wipes
+    // the visible page (no <body> replacement, no title blanking, no alert).
     (function () {
         var realConsole = null;
         try { realConsole = window.console; } catch (e) {}
-        var dead = false;
-        var tick = null;
-        // Total wipe: destroys the page and kills any console output, forever.
-        function seal() {
-            if (dead) return;
-            dead = true;
-            try { if (tick) clearInterval(tick); } catch (e) {}
+        // Kill every console method so nothing can be read or logged ever again.
+        function silence() {
             try { if (realConsole && realConsole.clear) realConsole.clear(); } catch (e) {}
-            try { document.title = ''; } catch (e) {}
-            try {
-                var host = document.body || document.documentElement;
-                host.innerHTML = '<div style="position:fixed;inset:0;z-index:2147483647;background:#070707;color:#f2f2f2;display:flex;align-items:center;justify-content:center;font-family:Verdana,sans-serif;text-align:center;font-size:18px;padding:2rem;">Developer tools are disabled on this site.</div>';
-            } catch (e) {}
+            var m = ['log','info','warn','error','debug','table','trace','dir','dirxml','group','groupCollapsed','groupEnd','assert','count','countReset','exception','time','timeEnd','timeLog','profile','profileEnd'];
+            for (var i = 0; i < m.length; i++) {
+                try { if (realConsole && realConsole[m[i]]) realConsole[m[i]] = function () {}; } catch (e) {}
+            }
         }
+        silence();
         // Trap: ANY access to window.console (including typing "console" in
-        // DevTools, which evaluates in the page realm) instantly wipes the page.
-        var trapOk = false;
+        // DevTools, which evaluates in the page realm) returns the dead console.
         try {
             Object.defineProperty(window, 'console', {
                 configurable: true,
-                get: function () { seal(); return realConsole; }
+                get: function () { silence(); return realConsole; }
             });
-            trapOk = true;
-        } catch (e) { /* older browsers: fall back to stubbing below */ }
-        // Fallback for non-configurable consoles: stub every method to silence output.
-        if (!trapOk) {
-            try {
-                var m = ['log','info','warn','error','debug','table','trace','dir','dirxml','group','groupCollapsed','groupEnd','assert','count','countReset','exception','time','timeEnd','timeLog','profile','profileEnd'];
-                for (var i = 0; i < m.length; i++) {
-                    try { if (window.console && realConsole[m[i]]) window.console[m[i]] = function () {}; } catch (e) {}
-                }
-            } catch (e) {}
-        }
+        } catch (e) { /* older browsers: console already stubbed above */ }
         // Hard-block console reassignment attempts (console = x, defineProperty redefs).
         try {
             Object.defineProperty(window, 'console', {
                 configurable: true,
-                set: function () { seal(); }
+                set: function () { silence(); }
             });
         } catch (e) {}
         function stop(e) { e.preventDefault(); e.stopPropagation(); return false; }
@@ -1796,19 +2227,19 @@ if (!defined('APP_INITIALIZED')) {
                 return (performance.now() - t0) > 100;
             } catch (e) { return false; }
         }
-        window.addEventListener('resize', function () { try { if (devtoolsSize()) seal(); } catch (e) {} }, true);
+        window.addEventListener('resize', function () { try { if (devtoolsSize()) silence(); } catch (e) {} }, true);
         // Detect the DevTools "Inspect" context-menu trigger on right-click as well.
         document.addEventListener('mousedown', function (e) {
             if (e.button === 2) {
-                setTimeout(function () { try { if (devtoolsSize()) seal(); } catch (e) {} }, 350);
+                setTimeout(function () { try { if (devtoolsSize()) silence(); } catch (e) {} }, 350);
             }
         }, true);
-        tick = setInterval(function () {
-            try { if (devtoolsSize() || devtoolsDebug()) seal(); } catch (e) {}
+        setInterval(function () {
+            try { if (devtoolsSize() || devtoolsDebug()) silence(); } catch (e) {}
         }, 250);
-        document.addEventListener('focusin', function () { try { if (devtoolsDebug()) seal(); } catch (e) {} }, true);
+        document.addEventListener('focusin', function () { try { if (devtoolsDebug()) silence(); } catch (e) {} }, true);
         document.addEventListener('visibilitychange', function () {
-            try { if (!document.hidden && devtoolsDebug()) seal(); } catch (e) {}
+            try { if (!document.hidden && devtoolsDebug()) silence(); } catch (e) {}
         });
     })();
 
@@ -1882,6 +2313,11 @@ if (!defined('APP_INITIALIZED')) {
     }
 
     set_exception_handler(function (Throwable $t) {
+        $uid = 0;
+        if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['user_id'])) {
+            $uid = (int)$_SESSION['user_id'];
+        }
+        log_error('fatal', $t->getMessage(), $t->getFile(), $t->getLine(), $uid);
         error_log('[fatal] ' . $t->getMessage() . ' in ' . $t->getFile() . ':' . $t->getLine());
         $cfg = $GLOBALS['CFG'];
         if (!empty($cfg['debug'])) {

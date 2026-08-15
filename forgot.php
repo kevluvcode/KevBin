@@ -68,8 +68,8 @@ page_header('Forgot password');
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Recovery key</label>
-                    <input class="form-control" name="recovery_key" required maxlength="100" autocomplete="off"
-                        placeholder="ABCD-EFGH-JKLM-NOPQ-..." style="font-family:'JetBrains Mono',monospace;">
+                    <input class="form-control" name="recovery_key" required maxlength="220" autocomplete="off"
+                        placeholder="ABCD-EFGH-JKLM-..." style="font-family:'JetBrains Mono',monospace;">
                     <div class="form-text">Found in Settings → Recovery key, or in the file you downloaded at registration.</div>
                 </div>
                 <div class="mb-3">
@@ -83,7 +83,7 @@ page_header('Forgot password');
                 <div class="mb-3">
                     <label class="form-label">Security check</label>
                     <div class="d-flex align-items-center gap-2 mb-2">
-                        <img src="captcha.php?v=<?= time() ?>" alt="captcha" width="150" height="52"
+                        <img src="captcha.php?v=<?= time() ?>" alt="captcha" width="160" height="56"
                             style="border-radius:8px;border:1px solid var(--line);">
                         <button type="button" class="btn btn-sm btn-outline-light" onclick="this.previousElementSibling.src='captcha.php?rot=1&v='+Date.now()"
                             title="New captcha">↻</button>

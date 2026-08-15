@@ -23,16 +23,16 @@ function wiki_slugify(string $s): string
     return $s !== '' ? $s : 'page';
 }
 
-function wiki_inline(string $line): string
+function wiki_inline(string $line, string $scope = 'community'): string
 {
     $line = wiki_escape($line);
     $line = preg_replace_callback('/`([^`]+)`/', function ($m) {
         return '<code>' . $m[1] . '</code>';
     }, $line);
-    $line = preg_replace_callback('/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/', function ($m) {
+    $line = preg_replace_callback('/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/', function ($m) use ($scope) {
         $slug = wiki_slugify($m[1]);
         $label = $m[2] ?? $m[1];
-        return '<a href="' . e('wiki.php?scope=community&slug=' . $slug) . '">' . $label . '</a>';
+        return '<a href="' . e('wiki.php?scope=' . $scope . '&slug=' . $slug) . '">' . $label . '</a>';
     }, $line);
     $line = preg_replace_callback('/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/', function ($m) {
         return '<a href="' . $m[2] . '" rel="noopener nofollow" target="_blank">' . $m[1] . '</a>';
@@ -42,7 +42,7 @@ function wiki_inline(string $line): string
     return $line;
 }
 
-function wiki_render(string $src): string
+function wiki_render(string $src, string $scope = 'community'): string
 {
     $src = str_replace(["\r\n", "\r"], "\n", $src);
     $lines = explode("\n", $src);
@@ -55,7 +55,7 @@ function wiki_render(string $src): string
     $table = [];
     $plain = [];
 
-    $flush = function () use (&$out, &$blockquote, &$listUl, &$listOl, &$table, &$plain): void {
+    $flush = function () use (&$out, &$blockquote, &$listUl, &$listOl, &$table, &$plain, $scope): void {
         if ($plain !== []) {
             $out .= '<p>' . implode("<br>\n", $plain) . "</p>\n";
             $plain = [];
@@ -78,7 +78,7 @@ function wiki_render(string $src): string
                 $header = $row['h'];
                 $out .= '<tr>';
                 foreach ($row['c'] as $cell) {
-                    $out .= $header ? '<th>' . wiki_inline($cell) . '</th>' : '<td>' . wiki_inline($cell) . '</td>';
+                    $out .= $header ? '<th>' . wiki_inline($cell, $scope) . '</th>' : '<td>' . wiki_inline($cell, $scope) . '</td>';
                 }
                 $out .= '</tr>';
             }
@@ -135,7 +135,7 @@ function wiki_render(string $src): string
         if (preg_match('/^(={1,6})\s+(.*)$/', $trimmed, $m)) {
             $flush();
             $level = strlen($m[1]);
-            $out .= '<h' . $level . ' class="wiki-h' . $level . ' mt-4 mb-2">' . wiki_inline(trim($m[2])) . '</h' . $level . ">\n";
+            $out .= '<h' . $level . ' class="wiki-h' . $level . ' mt-4 mb-2">' . wiki_inline(trim($m[2]), $scope) . '</h' . $level . ">\n";
             continue;
         }
         if ($trimmed === '---') {
@@ -146,7 +146,7 @@ function wiki_render(string $src): string
         if (strpos($trimmed, '> ') === 0 || $trimmed === '>') {
             $flush();
             while ($i < $n && (strpos(trim($lines[$i]), '> ') === 0 || trim($lines[$i]) === '>')) {
-                $blockquote[] = wiki_inline(trim(substr(trim($lines[$i]), 1)));
+                $blockquote[] = wiki_inline(trim(substr(trim($lines[$i]), 1)), $scope);
                 $i++;
             }
             $i--;
@@ -155,7 +155,7 @@ function wiki_render(string $src): string
         if (strpos($trimmed, '* ') === 0 || strpos($trimmed, '- ') === 0) {
             $flush();
             while ($i < $n && (strpos(trim($lines[$i]), '* ') === 0 || strpos(trim($lines[$i]), '- ') === 0)) {
-                $listUl[] = '<li>' . wiki_inline(substr(trim($lines[$i]), 2)) . '</li>';
+                $listUl[] = '<li>' . wiki_inline(substr(trim($lines[$i]), 2), $scope) . '</li>';
                 $i++;
             }
             $i--;
@@ -164,14 +164,14 @@ function wiki_render(string $src): string
         if (preg_match('/^(#|\d+\.)\s+(.*)$/', $trimmed, $m)) {
             $flush();
             while ($i < $n && preg_match('/^(#|\d+\.)\s+(.*)$/', trim($lines[$i]), $mm)) {
-                $listOl[] = '<li>' . wiki_inline($mm[2]) . '</li>';
+                $listOl[] = '<li>' . wiki_inline($mm[2], $scope) . '</li>';
                 $i++;
             }
             $i--;
             continue;
         }
 
-        $plain[] = wiki_inline($line);
+        $plain[] = wiki_inline($line, $scope);
     }
     $flush();
     if ($inCode) {
@@ -302,7 +302,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($postAction === 'preview') {
         $previewTitle = trim((string)($_POST['title'] ?? ''));
         $previewContent = (string)($_POST['content'] ?? '');
-        $previewHtml = wiki_render($previewContent);
+        $previewHtml = wiki_render($previewContent, $scope);
     } elseif ($postAction === 'save') {
         csrf_verify_or_fail();
         $newTitle = trim((string)($_POST['title'] ?? ''));
@@ -321,6 +321,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $existing = wiki_get_page($pdo, $scope, $ownerId, $newSlug);
             if ($existing !== null && $page !== null && (int)$existing['id'] !== (int)$page['id']) {
                 flash_set('error', 'Another page already uses that title.');
+            } elseif (!is_staff()) {
+                // Non-staff edits (regular users): route through the approval queue.
+                $mq = $pdo->prepare(
+                    'INSERT INTO moderation_queue
+                        (action_type, target_type, ref_id, scope, slug, title, old_content, new_content, note, requested_by)
+                     VALUES (\'edit\', \'wiki\', ?, ?, ?, ?, ?, ?, ?, ?)'
+                );
+                $mq->execute([
+                    $page !== null ? (string)$page['id'] : null,
+                    $scope,
+                    $newSlug,
+                    $newTitle,
+                    $page !== null ? $page['content'] : null,
+                    $newContent,
+                    mb_substr($note, 0, 1000),
+                    $me !== null ? (int)$me['id'] : null,
+                ]);
+                log_activity('moderation_queued', 'wiki edit ' . $scope . '/' . $newSlug);
+                flash_set('success', 'Your edit has been submitted for staff approval.');
+                redirect('wiki.php?scope=' . urlencode($scope) . ($page !== null ? '&slug=' . urlencode($page['slug']) : ''));
             } else {
                 if ($page !== null) {
                     if ($page['slug'] !== $newSlug || $page['title'] !== $newTitle) {
@@ -352,6 +372,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($page === null || !wiki_can_delete($me, $page)) {
             friendly_error('You are not allowed to delete this page.', 403);
         }
+        if (!is_staff()) {
+            $mq = $pdo->prepare(
+                'INSERT INTO moderation_queue
+                    (action_type, target_type, ref_id, scope, slug, title, old_content, note, requested_by)
+                 VALUES (\'delete\', \'wiki\', ?, ?, ?, ?, ?, ?, ?)'
+            );
+            $mq->execute([
+                (string)$page['id'],
+                $scope,
+                $page['slug'],
+                $page['title'],
+                $page['content'],
+                'Requested deletion of this page',
+                $me !== null ? (int)$me['id'] : null,
+            ]);
+            log_activity('moderation_queued', 'wiki delete ' . $scope . '/' . $slug);
+            flash_set('success', 'Your deletion request has been submitted for staff approval.');
+            redirect('wiki.php?scope=' . urlencode($scope) . '&slug=' . urlencode($slug));
+        }
         $pdo->prepare('DELETE FROM wiki_revisions WHERE page_id = ?')->execute([(int)$page['id']]);
         $pdo->prepare('DELETE FROM wiki_pages WHERE id = ?')->execute([(int)$page['id']]);
         log_activity('wiki_delete', $scope . '/' . $slug);
@@ -378,6 +417,9 @@ $editAllowed = wiki_can_edit($me, $page);
     <p class="text-secondary small mb-4">Wiki markup: <code>= Heading</code> <code>**bold**</code> <code>`code`</code> <code>[[Page]]</code> <code>[label](url)</code>, lists, quotes, tables and ``` code blocks.</p>
 
 <?php if ($action === 'edit' || $action === 'new' || isset($previewHtml)): ?>
+    <?php if (!is_staff()): ?>
+        <div class="alert alert-info py-2 small">Your changes will be submitted for staff approval before they appear on the page.</div>
+    <?php endif; ?>
     <form method="post" class="mb-4">
         <input type="hidden" name="action" value="save">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -456,7 +498,7 @@ $editAllowed = wiki_can_edit($me, $page);
         <a class="btn btn-sm btn-primary" href="wiki.php?scope=<?= e($scope) ?>&slug=<?= e($slug) ?>&action=edit">Edit</a>
     </div>
     <p class="text-secondary small mb-3">Saved <?= e($rev['created_at']) ?><?= $rev['note'] !== '' && $rev['note'] !== null ? ' — ' . e($rev['note']) : '' ?></p>
-    <div class="card mb-4"><div class="card-body"><?= wiki_render($rev['content']) ?></div></div>
+    <div class="card mb-4"><div class="card-body"><?= wiki_render($rev['content'], $page['scope']) ?></div></div>
 
 <?php elseif ($page === null && $slug !== ''): ?>
     <div class="alert alert-warning">This page does not exist.
@@ -490,7 +532,7 @@ $editAllowed = wiki_can_edit($me, $page);
         by <?= wiki_author($pdo, $page) ?> · updated <?= e($page['updated_at']) ?> · <?= (int)$page['views'] ?> views
         <?php if ((int)$page['locked'] === 1): ?> · <span class="text-warning">🔒 locked</span><?php endif; ?>
     </p>
-    <div class="card mb-4"><div class="card-body wiki-content"><?= wiki_render($page['content']) ?></div></div>
+    <div class="card mb-4"><div class="card-body wiki-content"><?= wiki_render($page['content'], $page['scope']) ?></div></div>
 
 <?php else: ?>
     <?php include_wiki_list($pdo, $scope, $me, $slug); ?>

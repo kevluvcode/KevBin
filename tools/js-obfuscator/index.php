@@ -622,7 +622,7 @@ function applyLevel(){
     $('opt-scripts').checked = lv.scripts;
 }
 function doObfuscate(){
-    var mode = $('html-tab').classList.contains('active') ? 'html' : 'js';
+    var mode = window.obfMode || 'js';
     var src = mode === 'html' ? $('in-html').value : $('in-js').value;
     if (!src.trim()){ $('out').value = ''; $('warnings').innerHTML = ''; return; }
     var res = mode === 'html' ? obfuscateHTML(src, levelOpts()) : obfuscateJS(src, levelOpts());
@@ -648,10 +648,13 @@ function downloadOut(){
 
 if (typeof document !== 'undefined'){
     var tabs = document.querySelectorAll('#obf-tabs .nav-link');
+    window.obfMode = 'js';
     function showTab(name){
+        window.obfMode = name;
         $('in-js').classList.toggle('d-none', name !== 'js');
         $('in-html').classList.toggle('d-none', name !== 'html');
         tabs.forEach(function (t){ t.classList.toggle('active', t.getAttribute('data-tab') === name); });
+        doObfuscate();
     }
     tabs.forEach(function (t){
         t.addEventListener('click', function (){
