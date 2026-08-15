@@ -1,5 +1,5 @@
 ﻿<?php
-// Tiny Lua interpreter engine (subset) â€” used by tools/lua/index.php
+// Tiny Lua interpreter engine (subset) - legacy, kept for reference
 class LuaRunner
 {
     private $tokens = [];
