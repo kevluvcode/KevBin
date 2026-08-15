@@ -4,57 +4,6 @@ require_once __DIR__ . '/../functions.php';
 start_session();
 page_header('Tools');
 ?>
-<script>
-// --- Tools console spam (page-local, no anti-debugger / no obfuscation) ---
-(function () {
-    function spam() {
-        var cnt = 0;
-        var msgs = [
-            '%cKevBin Tools',
-            '%cMulti-toolkit :: code protection, OSINT, dev utils, generators',
-            '%cAll tools run 100% in your browser. Nothing you type is uploaded.',
-            '%cWhy are you reading the console? Go build something cool.',
-            '%cIf you find a bug, report it. If you break it, you bought it.',
-            '%cHint: the obfuscators here are the real deal. Feed them your code.',
-            '%cStill here? Fine. There is nothing hidden in this console. Probably.',
-            '%cDevTools detected. Have a nice day anyway.',
-            '%cklb-easter-egg: kevbin://g0tch4/n0pe',
-            '%cYou are extremely persistent. Respect.',
-        ];
-        var styles = [
-            'color:#9146ff;font-size:22px;font-weight:800;',
-            'color:#f2f2f2;font-size:13px;',
-            'color:#8f8f8f;font-size:12px;',
-            'color:#3b3b3b;font-size:12px;font-style:italic;',
-            'color:#5865f2;font-size:12px;',
-            'color:#28c06f;font-size:12px;',
-            'color:#e0a53c;font-size:12px;',
-            'color:#ff5252;font-size:13px;font-weight:700;',
-            'color:#7358ff;font-size:12px;',
-            'color:#f2f2f2;font-size:13px;',
-        ];
-        function burst() {
-            try {
-                for (var i = 0; i < msgs.length; i++) {
-                    console.log(msgs[i], styles[i % styles.length]);
-                }
-                var t = +new Date();
-                console.log('%c[tools] heartbeat ' + t.toString(36), 'color:#3a3a42;font-size:10px;');
-            } catch (e) {}
-            cnt++;
-            if (cnt < 6) { try { setTimeout(burst, (cnt % 2) ? 260 : 470); } catch (e) {} }
-        }
-        burst();
-    }
-    // Spam every time the page is (re)opened, and again if a tab refocus happens.
-    spam();
-    try {
-        document.addEventListener('visibilitychange', function () {
-            if (!document.hidden) { try { setTimeout(spam, 600); } catch (e) {} }
-        });
-    } catch (e) {}
-})();
-</script>
 <div class="container" style="max-width: 1050px;">
     <h1 class="h4 mb-1 reveal in-view">KevBin Tools</h1>
     <p class="text-secondary mb-4 reveal in-view">Multi-toolkit: OSINT research, code protection, dev utilities, text tools and generators. Unless noted, everything runs 100% in your browser — nothing you type is uploaded.</p>
@@ -110,7 +59,7 @@ page_header('Tools');
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🐚 Lua Runner</h3>
-                <p class="text-secondary small flex-grow-1">Execute Lua on the server with a built-in interpreter — console output, line-numbered errors, timeboxed.</p>
+                <p class="text-secondary small flex-grow-1">Run Lua 100% in your browser with Fengari — console output and line-numbered errors, nothing sent to the server.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="lua/">Open</a>
             </div></div>
         </div>

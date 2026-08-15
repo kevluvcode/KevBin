@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 // Tiny Lua interpreter engine (subset) - legacy, kept for reference
 class LuaRunner
 {
