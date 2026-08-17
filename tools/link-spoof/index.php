@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Enter a valid URL starting with http:// or https://';
             } else {
                 $obfuscations = $_POST['obfuscations'] ?? [];
-                $shorteners = $_POST['shorteners'] ?? ['tinyurl', 'isgd', 'vgd'];
+                $shorteners = $_POST['shorteners'] ?? ['tinyurl', 'isgd', 'vgd', 'shrtr', 'kevbin'];
                 $rounds = max(1, min(5, (int)($_POST['rounds'] ?? 3)));
 
                 $payload = [
@@ -204,12 +204,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label class="form-check-label small" for="s2">is.gd</label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="dagd" id="s3">
-                            <label class="form-check-label small" for="s3">da.gd</label>
+                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="vgd" id="s3" checked>
+                            <label class="form-check-label small" for="s3">v.gd</label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="vgd" id="s4" checked>
-                            <label class="form-check-label small" for="s4">v.gd</label>
+                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="dagd" id="s4">
+                            <label class="form-check-label small" for="s4">da.gd</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="shrtr" id="s5">
+                            <label class="form-check-label small" for="s5">Shrtr</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="zip1" id="s6">
+                            <label class="form-check-label small" for="s6">zip1.io</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="kevbin" id="s7">
+                            <label class="form-check-label small" for="s7">KevBin</label>
                         </div>
                     </div>
                 </div>

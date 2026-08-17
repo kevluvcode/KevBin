@@ -4,13 +4,23 @@ require_once __DIR__ . '/functions.php';
 start_session();
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
 // CORS preflight.
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
+    exit;
+}
+
+// Allow POST only for specific actions.
+$isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
+$postAction = $isPost ? (string)($_POST['action'] ?? $_GET['action'] ?? '') : '';
+$allowedPost = ['link.create'];
+if ($isPost && !in_array($postAction, $allowedPost, true)) {
+    http_response_code(405);
+    echo json_encode(['error' => 'POST is only allowed for: ' . implode(', ', $allowedPost)]);
     exit;
 }
 
@@ -30,12 +40,9 @@ function api_err(string $msg, int $status = 400): void
 // posted/created and user browsing is intentionally not exposed.
 // Public API docs point to the Cloudflare Worker proxy, but api.php still
 // serves the database directly (the worker proxies through here).
-if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
-    api_err('This API is read-only. POST/PUT/DELETE are not allowed.', 405);
-}
 send_security_headers();
 
-$action = (string)($_GET['action'] ?? 'pastes');
+$action = $isPost ? $postAction : (string)($_GET['action'] ?? 'pastes');
 $base = $GLOBALS['CFG']['base_url'];
 
 try {
@@ -235,6 +242,69 @@ switch ($action) {
             'site' => $GLOBALS['CFG']['site_name'],
             'generated_at' => gmdate('c'),
             'updates' => $items,
+        ]);
+
+    case 'link.get': // Look up a short link by code.
+        $code = (string)($_GET['code'] ?? $_GET['slug'] ?? '');
+        if ($code === '' || !preg_match('/^[A-Za-z0-9]{3,16}$/', $code)) {
+            api_err('Missing or invalid "code".', 400);
+        }
+        $stmt = $pdo->prepare('SELECT code, target_url, title, clicks, created_at FROM links WHERE code = ?');
+        $stmt->execute([$code]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            api_err('Link not found.', 404);
+        }
+        api_out([
+            'ok' => true,
+            'code' => $row['code'],
+            'url' => $row['target_url'],
+            'title' => $row['title'],
+            'clicks' => (int)$row['clicks'],
+            'created_at' => $row['created_at'],
+        ]);
+
+    case 'link.create': // Create a short link (POST only, no auth required for anonymous links).
+        if (!$isPost) {
+            api_err('link.create requires POST.', 405);
+        }
+        $targetUrl = trim((string)($_POST['url'] ?? ''));
+        if ($targetUrl === '' || !preg_match('#^https?://#i', $targetUrl)) {
+            api_err('Missing or invalid "url" — must start with http:// or https://', 400);
+        }
+        $targetUrl = mb_substr($targetUrl, 0, 2048);
+
+        $customCode = trim((string)($_POST['code'] ?? $_POST['slug'] ?? ''));
+        if ($customCode !== '') {
+            if (!preg_match('/^[A-Za-z0-9]{3,16}$/', $customCode)) {
+                api_err('Custom code must be 3-16 alphanumeric characters.', 400);
+            }
+            $stmt = $pdo->prepare('SELECT 1 FROM links WHERE code = ?');
+            $stmt->execute([$customCode]);
+            if ($stmt->fetch()) {
+                api_err('That custom code is already taken.', 409);
+            }
+            $code = $customCode;
+        } else {
+            // Generate a random 6-char code.
+            $code = generate_link_code(6);
+        }
+
+        $manageKey = bin2hex(random_bytes(16));
+        try {
+            $pdo->prepare('INSERT INTO links (code, user_id, manage_key, target_url, title, tracking, clicks, created_at) VALUES (?, NULL, ?, ?, \'\', 1, 0, UTC_TIMESTAMP())')
+                ->execute([$code, $manageKey, $targetUrl]);
+        } catch (Throwable $t) {
+            api_err('Failed to create link: ' . $t->getMessage(), 500);
+        }
+
+        $shortUrl = link_short_url($code);
+        api_out([
+            'ok' => true,
+            'code' => $code,
+            'short' => $shortUrl,
+            'target' => $targetUrl,
+            'manage_key' => $manageKey,
         ]);
 
     default:

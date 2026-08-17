@@ -121,6 +121,99 @@ async function fetchKevBin(url) {
   return { status: resp.status, body };
 }
 
+// PingChecker helpers
+async function tcpPing(host, port = 80, timeoutMs = 5000) {
+  const t0 = Date.now();
+  try {
+    const socket = connect({ hostname: host, port });
+    const timer = setTimeout(() => socket.close(), timeoutMs);
+    await socket.opened;
+    clearTimeout(timer);
+    const ms = Date.now() - t0;
+    socket.close();
+    return { latency_ms: ms, ok: true };
+  } catch (e) {
+    return { latency_ms: Date.now() - t0, ok: false, error: String(e.message || e) };
+  }
+}
+
+async function resolveIP(host) {
+  try {
+    const resp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(host) + '&type=A');
+    const data = await resp.json();
+    if (data.Answer && data.Answer.length > 0) {
+      const a = data.Answer.find(r => r.type === 1);
+      if (a) return a.data;
+    }
+  } catch {}
+  return null;
+}
+
+function extractTitle(html) {
+  const m = html.match(/<title[^>]*>([^<]{1,200})<\/title>/i);
+  return m ? m[1].trim() : '';
+}
+
+function extractMeta(html) {
+  const metas = {};
+  const re = /<meta\s+(?:name|property|http-equiv)\s*=\s*["']([^"']+)["']\s+content\s*=\s*["']([^"']{0,500})["']/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    metas[m[1]] = m[2];
+  }
+  return metas;
+}
+
+function extractLinks(html, baseUrl) {
+  const links = [];
+  const re = /<a\s+[^>]*href\s*=\s*["']([^"']{1,2048})["']/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    try {
+      const u = new URL(m[1], baseUrl);
+      if (['http:', 'https:'].includes(u.protocol)) {
+        links.push(u.href);
+      }
+    } catch {}
+  }
+  return [...new Set(links)];
+}
+
+async function crawlPage(url, timeoutMs = 10000) {
+  const t0 = Date.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'KevBin-PingChecker/1.0' },
+      redirect: 'follow',
+    });
+    clearTimeout(timer);
+    const html = await resp.text();
+    const responseTime = Date.now() - t0;
+    return {
+      url,
+      final_url: resp.url,
+      status: resp.status,
+      ok: resp.ok,
+      response_time_ms: responseTime,
+      title: extractTitle(html),
+      meta: extractMeta(html),
+      links: extractLinks(html, resp.url),
+      content_length: html.length,
+    };
+  } catch (e) {
+    return {
+      url,
+      status: 0,
+      ok: false,
+      response_time_ms: Date.now() - t0,
+      error: String(e.message || e),
+    };
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -475,7 +568,7 @@ export default {
 
       const obfs = Array.isArray(body.obfuscations) ? body.obfuscations : [];
       const shorteners = Array.isArray(body.shorteners) && body.shorteners.length > 0
-        ? body.shorteners : ['tinyurl', 'isgd', 'vgd'];
+        ? body.shorteners : ['tinyurl', 'isgd', 'vgd', 'shrtr', 'kevbin'];
       const rounds = Math.max(1, Math.min(5, parseInt(body.rounds) || 3));
 
       // Parse the original URL
@@ -547,6 +640,44 @@ export default {
             short = (await r.text()).trim();
             if (short.startsWith('http')) return { service: 'v.gd', short, status: r.status, ok: true };
             return { service: 'v.gd', error: 'no URL returned', status: r.status, ok: false };
+          }
+          if (service === 'shrtr') {
+            const r = await fetch('https://shrtr.top/api/v1/shorten', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
+              body: JSON.stringify({ url }),
+            });
+            const data = await r.json();
+            if (data.link) return { service: 'Shrtr', short: data.link, status: r.status, ok: true };
+            return { service: 'Shrtr', error: data.title || data.detail || 'failed', status: r.status, ok: false };
+          }
+          if (service === 'zip1') {
+            const r = await fetch('https://zip1.io/api/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
+              body: JSON.stringify({ url }),
+            });
+            const data = await r.json();
+            if (data.short_url) return { service: 'zip1.io', short: data.short_url, status: r.status, ok: true };
+            return { service: 'zip1.io', error: data.error || 'failed', status: r.status, ok: false };
+          }
+          if (service === 'kevbin') {
+            try {
+              const formData = new URLSearchParams();
+              formData.append('action', 'link.create');
+              formData.append('url', url);
+              const r = await fetch('https://kevbin.ct.ws/api.php?action=link.create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA },
+                body: formData.toString(),
+                redirect: 'follow',
+              });
+              const data = await r.json();
+              if (data.ok && data.short) return { service: 'KevBin', short: data.short, status: r.status, ok: true };
+              return { service: 'KevBin', error: data.error || 'failed', status: r.status, ok: false };
+            } catch (e) {
+              return { service: 'KevBin', error: String(e.message || e), status: 0, ok: false };
+            }
           }
           return { service, error: 'unknown service', status: 0, ok: false };
         } catch (e) {
@@ -1008,6 +1139,151 @@ export default {
 
       // Unknown — still 204 to not block Discord
       return new Response(null, { status: 204, headers: { 'Content-Type': 'application/json', ...CORS } });
+    }
+
+    // ── POST /ping — TCP latency ping (PingChecker) ─────────────────
+    if (request.method === 'POST' && url.pathname === '/ping') {
+      const body = await readBody(request);
+      if (!body) return json({ error: 'bad json' }, 400);
+      const host = String(body.host || '').trim();
+      const port = parseInt(body.port) || 80;
+      if (!host) return json({ error: 'missing host' }, 400);
+
+      const [ip, pingResult] = await Promise.all([
+        resolveIP(host),
+        tcpPing(host, port, Math.min(parseInt(body.timeout_ms) || 5000, 10000)),
+      ]);
+
+      return json({
+        host,
+        ip: ip || 'unknown',
+        port,
+        latency_ms: pingResult.latency_ms,
+        ok: pingResult.ok,
+        error: pingResult.error,
+      });
+    }
+
+    // ── POST /check — HTTP health check (PingChecker) ──────────────
+    if (request.method === 'POST' && url.pathname === '/check') {
+      const body = await readBody(request);
+      if (!body) return json({ error: 'bad json' }, 400);
+      const targetUrl = String(body.url || '');
+      if (!targetUrl) return json({ error: 'missing url' }, 400);
+
+      try { new URL(targetUrl); } catch { return json({ error: 'invalid url' }, 400); }
+
+      const result = await crawlPage(targetUrl, Math.min(parseInt(body.timeout_ms) || 10000, 20000));
+      return json(result);
+    }
+
+    // ── POST /batch — multiple URL checks (PingChecker) ────────────
+    if (request.method === 'POST' && url.pathname === '/batch') {
+      const body = await readBody(request);
+      if (!body || !Array.isArray(body.urls)) return json({ error: 'missing urls array' }, 400);
+
+      const urls = body.urls.slice(0, 10).map(u => String(u));
+      const results = await Promise.all(urls.map(u => crawlPage(u, 8000)));
+      return json({ results });
+    }
+
+    // ── POST /crawl — recursive crawl (PingChecker) ────────────────
+    if (request.method === 'POST' && url.pathname === '/crawl') {
+      const body = await readBody(request);
+      if (!body) return json({ error: 'bad json' }, 400);
+      const startUrl = String(body.url || '');
+      const maxDepth = Math.min(parseInt(body.depth) || 1, 3);
+      const maxPages = Math.min(parseInt(body.max_pages) || 10, 50);
+      if (!startUrl) return json({ error: 'missing url' }, 400);
+
+      try { new URL(startUrl); } catch { return json({ error: 'invalid url' }, 400); }
+
+      const visited = new Set();
+      const pages = [];
+      const queue = [{ url: startUrl, depth: 0 }];
+
+      while (queue.length > 0 && pages.length < maxPages) {
+        const { url: crawlUrl, depth } = queue.shift();
+        if (visited.has(crawlUrl) || depth > maxDepth) continue;
+        visited.add(crawlUrl);
+
+        const result = await crawlPage(crawlUrl, 8000);
+        pages.push({ ...result, depth });
+
+        if (depth < maxDepth && result.links) {
+          const origin = new URL(startUrl).origin;
+          for (const link of result.links) {
+            try {
+              const lu = new URL(link);
+              if (lu.origin === origin && !visited.has(link)) {
+                queue.push({ url: link, depth: depth + 1 });
+              }
+            } catch {}
+          }
+        }
+      }
+
+      return json({
+        start_url: startUrl,
+        pages_found: pages.length,
+        pages,
+      });
+    }
+
+    // ── POST /shorten — KevBin own URL shortener ───────────────────
+    if (request.method === 'POST' && url.pathname === '/shorten') {
+      const body = await readBody(request);
+      if (!body) return json({ error: 'bad json' }, 400);
+
+      const targetUrl = String(body.url || '');
+      if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
+        return json({ error: 'invalid url — must start with http:// or https://' }, 400);
+      }
+
+      const slug = String(body.slug || '').trim();
+
+      try {
+        const formData = new URLSearchParams();
+        formData.append('action', 'link.create');
+        formData.append('url', targetUrl);
+        if (slug) formData.append('slug', slug);
+
+        const resp = await fetch('https://kevbin.ct.ws/api.php?action=link.create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'KevBin-Worker/1.0',
+          },
+          body: formData.toString(),
+          redirect: 'follow',
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          return json({ ok: true, code: data.code, short: data.short, target: data.target, manage_key: data.manage_key });
+        }
+        return json({ ok: false, error: data.error || 'link.create failed' }, resp.status || 502);
+      } catch (e) {
+        return json({ ok: false, error: 'upstream error: ' + String(e.message || e) }, 502);
+      }
+    }
+
+    // ── GET /l/:slug — KevBin short link redirect ──────────────────
+    if (request.method === 'GET' && url.pathname.startsWith('/l/')) {
+      const slug = url.pathname.substring(3);
+      if (!slug || slug.length > 20) {
+        return new Response('Invalid slug', { status: 400, headers: CORS });
+      }
+
+      try {
+        const upstream = await fetchKevBin('https://kevbin.ct.ws/api.php?action=link.get&code=' + encodeURIComponent(slug));
+        const data = JSON.parse(upstream.body);
+        if (data.ok && data.url) {
+          return Response.redirect(data.url, 302);
+        }
+        return new Response('Link not found', { status: 404, headers: CORS });
+      } catch {
+        return new Response('Link not found', { status: 404, headers: CORS });
+      }
     }
 
     return new Response('Not Found', { status: 404, headers: CORS });
