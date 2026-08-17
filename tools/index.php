@@ -196,26 +196,9 @@ page_header('Tools');
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🔗 Link Spoof / Obfuscator</h3>
-                <p class="text-secondary small flex-grow-1">Disguise URLs through percent encoding, Unicode homoglyphs, @ tricks, IP decimal and cascading through multiple shorteners (TinyURL, is.gd, da.gd, CleanURI).</p>
+                <p class="text-secondary small flex-grow-1">Disguise URLs through percent encoding, Unicode homoglyphs, @ tricks, IP decimal and cascading through multiple shorteners (TinyURL, is.gd, v.gd, da.gd, Shrtr, zip1.io, KevBin).</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="link-spoof/">Open</a>
                 <span class="text-secondary small mt-2">⚠️ For phishing awareness &amp; security education.</span>
-            </div></div>
-        </div>
-
-        <div class="col reveal">
-            <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">⚡ Discord Webhook Spammer</h3>
-                <p class="text-secondary small flex-grow-1">Send multiple messages to a webhook to test rate limits and flood behavior — sequential delivery with full response logging.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="webhook-spam/">Open</a>
-                <span class="text-secondary small mt-2">⚠️ Educational use only — test your own webhooks.</span>
-            </div></div>
-        </div>
-
-        <div class="col reveal">
-            <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🗑 Discord Webhook Deleter</h3>
-                <p class="text-secondary small flex-grow-1">Permanently delete a Discord webhook by URL — irreversible, sends DELETE to Discord's API via our proxy.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="webhook-delete/">Open</a>
             </div></div>
         </div>
 
