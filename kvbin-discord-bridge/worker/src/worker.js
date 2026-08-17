@@ -475,7 +475,7 @@ export default {
 
       const obfs = Array.isArray(body.obfuscations) ? body.obfuscations : [];
       const shorteners = Array.isArray(body.shorteners) && body.shorteners.length > 0
-        ? body.shorteners : ['tinyurl', 'isgd'];
+        ? body.shorteners : ['tinyurl', 'isgd', 'vgd'];
       const rounds = Math.max(1, Math.min(5, parseInt(body.rounds) || 3));
 
       // Parse the original URL
@@ -542,15 +542,11 @@ export default {
             if (short.startsWith('http')) return { service: 'da.gd', short, status: r.status, ok: true };
             return { service: 'da.gd', error: 'no URL returned', status: r.status, ok: false };
           }
-          if (service === 'cleanuri') {
-            const r = await fetch('https://cleanuri.com/api/v1/shorten', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA },
-              body: 'url=' + encodeURIComponent(url),
-            });
-            const data = await r.json();
-            if (data.result_url) return { service: 'CleanURI', short: data.result_url, status: r.status, ok: true };
-            return { service: 'CleanURI', error: data.error || 'failed', status: r.status, ok: false };
+          if (service === 'vgd') {
+            const r = await fetch('https://v.gd/create.php?format=simple&url=' + encodeURIComponent(url), { headers: { 'User-Agent': UA } });
+            short = (await r.text()).trim();
+            if (short.startsWith('http')) return { service: 'v.gd', short, status: r.status, ok: true };
+            return { service: 'v.gd', error: 'no URL returned', status: r.status, ok: false };
           }
           return { service, error: 'unknown service', status: 0, ok: false };
         } catch (e) {
