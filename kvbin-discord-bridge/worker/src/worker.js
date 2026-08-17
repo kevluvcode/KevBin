@@ -569,7 +569,7 @@ export default {
       const obfs = Array.isArray(body.obfuscations) ? body.obfuscations : [];
       const shorteners = Array.isArray(body.shorteners) && body.shorteners.length > 0
         ? body.shorteners : ['tinyurl', 'isgd', 'vgd', 'shrtr', 'kevbin'];
-      const rounds = Math.max(1, Math.min(5, parseInt(body.rounds) || 3));
+      const rounds = Math.max(1, Math.min(30, parseInt(body.rounds) || 3));
 
       // Parse the original URL
       let parsed;
@@ -648,7 +648,7 @@ export default {
               body: JSON.stringify({ url }),
             });
             const data = await r.json();
-            if (data.link) return { service: 'Shrtr', short: data.link, status: r.status, ok: true };
+            if (data.short_url) return { service: 'Shrtr', short: data.short_url, status: r.status, ok: true };
             return { service: 'Shrtr', error: data.title || data.detail || 'failed', status: r.status, ok: false };
           }
           if (service === 'zip1') {
@@ -659,20 +659,40 @@ export default {
             });
             const data = await r.json();
             if (data.short_url) return { service: 'zip1.io', short: data.short_url, status: r.status, ok: true };
-            return { service: 'zip1.io', error: data.error || 'failed', status: r.status, ok: false };
+            return { service: 'zip1.io', error: data.message || data.error || 'failed', status: r.status, ok: false };
           }
           if (service === 'kevbin') {
             try {
+              const upstream = await fetchKevBin('https://kevbin.ct.ws/api.php?action=link.create');
+              // The fetchKevBin gets the challenge page; we need to POST with the cookie
               const formData = new URLSearchParams();
               formData.append('action', 'link.create');
               formData.append('url', url);
-              const r = await fetch('https://kevbin.ct.ws/api.php?action=link.create', {
+              const UA2 = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+              let r = await fetch('https://kevbin.ct.ws/api.php?action=link.create', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA },
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA2 },
                 body: formData.toString(),
                 redirect: 'follow',
               });
-              const data = await r.json();
+              let respText = await r.text();
+              // If we got the anti-bot challenge, solve it and retry
+              if (respText.includes('toNumbers') && respText.includes('slowAES')) {
+                const cookie = await solveChallenge(respText);
+                if (cookie) {
+                  const redirMatch = respText.match(/location\.href="([^"]+)"/);
+                  const redirUrl = redirMatch ? redirMatch[1] : 'https://kevbin.ct.ws/api.php?action=link.create';
+                  r = await fetch(redirUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA2, 'Cookie': '__test=' + cookie },
+                    body: formData.toString(),
+                    redirect: 'follow',
+                  });
+                  respText = await r.text();
+                }
+              }
+              let data;
+              try { data = JSON.parse(respText); } catch { return { service: 'KevBin', error: 'bad json response', status: r.status, ok: false }; }
               if (data.ok && data.short) return { service: 'KevBin', short: data.short, status: r.status, ok: true };
               return { service: 'KevBin', error: data.error || 'failed', status: r.status, ok: false };
             } catch (e) {

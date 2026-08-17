@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $obfuscations = $_POST['obfuscations'] ?? [];
                 $shorteners = $_POST['shorteners'] ?? ['tinyurl', 'isgd', 'vgd', 'shrtr', 'kevbin'];
-                $rounds = max(1, min(5, (int)($_POST['rounds'] ?? 3)));
+                $rounds = max(1, min(30, (int)($_POST['rounds'] ?? 3)));
 
                 $payload = [
                     'url'           => $targetUrl,
@@ -226,8 +226,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label small text-secondary">Chain rounds (1–5)</label>
-                    <input class="form-control" type="number" name="rounds" min="1" max="5" value="<?= e((string)($_POST['rounds'] ?? 3)) ?>">
+                    <label class="form-label small text-secondary">Chain rounds (1–30)</label>
+                    <input class="form-control" type="number" name="rounds" min="1" max="30" value="<?= e((string)($_POST['rounds'] ?? 3)) ?>">
                     <div class="form-text">Each round feeds the shortened URL back through all shorteners again.</div>
                 </div>
             </div>
