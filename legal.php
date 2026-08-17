@@ -44,6 +44,13 @@ try {
 } catch (Throwable $t) {
 }
 
+// Allow report links (e.g. from files.php) to pre-fill the type and target URL.
+$preType = (string)($_GET['type'] ?? '');
+if (!in_array($preType, ['dmca', 'takedown', 'privacy', 'abuse'], true)) {
+    $preType = '';
+}
+$preTarget = mb_substr(trim((string)($_GET['target'] ?? '')), 0, 255);
+
 page_header('DMCA / Law Enforcement');
 ?>
 <div class="container" style="max-width: 800px;">
@@ -75,10 +82,10 @@ page_header('DMCA / Law Enforcement');
                 <div class="col-md-6">
                     <label class="form-label">Request type</label>
                     <select class="form-select" name="type">
-                        <option value="dmca">DMCA copyright takedown</option>
-                        <option value="takedown">General takedown / removal</option>
-                        <option value="privacy">Privacy / personal data</option>
-                        <option value="abuse">Abuse</option>
+                        <option value="dmca" <?= $preType === 'dmca' ? 'selected' : '' ?>>DMCA copyright takedown</option>
+                        <option value="takedown" <?= $preType === 'takedown' ? 'selected' : '' ?>>General takedown / removal</option>
+                        <option value="privacy" <?= $preType === 'privacy' ? 'selected' : '' ?>>Privacy / personal data</option>
+                        <option value="abuse" <?= $preType === 'abuse' ? 'selected' : '' ?>>Abuse</option>
                     </select>
                 </div>
                 <div class="col-md-6">
@@ -91,7 +98,7 @@ page_header('DMCA / Law Enforcement');
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Target paste URL</label>
-                    <input class="form-control" name="target_url" required maxlength="255">
+                    <input class="form-control" name="target_url" required maxlength="255" value="<?= e($preTarget) ?>">
                 </div>
                 <div class="col-12">
                     <label class="form-label">Details</label>

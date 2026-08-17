@@ -25,8 +25,6 @@ if ($isNew) {
          LIMIT 5'
     )->fetchAll();
 
-    captcha_issue(true);
-
     page_header('New Paste');
     ?>
     <div class="container" style="max-width: 1100px;">
@@ -85,17 +83,6 @@ if ($isNew) {
                                 <div class="form-text">Set a password and only people who know it can view this paste.</div>
                             </div>
                             <div class="mt-3">
-                                <label class="form-label">Security check</label>
-                                <div class="d-flex align-items-center gap-2 mb-2">
-                                    <img src="captcha.php?v=<?= time() ?>" alt="captcha" width="160" height="56"
-                                        style="border-radius:8px;border:1px solid var(--line);">
-                                    <button type="button" class="btn btn-sm btn-outline-light" onclick="this.previousElementSibling.src='captcha.php?rot=1&v='+Date.now()"
-                                        title="New captcha">↻</button>
-                                </div>
-                                <input class="form-control" name="captcha" maxlength="6" required autocomplete="off"
-                                    placeholder="Type the characters above">
-                            </div>
-                            <div class="mt-3 d-flex align-items-center gap-2 flex-wrap">
                                 <button class="btn btn-primary">Publish paste</button>
                                 <span class="text-secondary small">Posts are keyword-watermarked and can be edited once using the edit link.</span>
                             </div>

@@ -7,14 +7,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 csrf_verify_or_fail();
 
-if (!captcha_ok((string)($_POST['captcha'] ?? ''))) {
-    flash_set('error', 'Wrong captcha answer. Try again.');
-    redirect('index.php?new=1');
-}
-
 $cfg = $GLOBALS['CFG'];
-if (!rate_limit_check('upload', (int)$cfg['upload_rate_limit'], (int)$cfg['rate_window_seconds'])) {
-    friendly_error('Rate limit reached: max ' . $cfg['upload_rate_limit'] . ' uploads per 10 minutes per IP.', 429);
+$contentLimit = content_char_limit();
+$uploadLimit = upload_rate_limit();
+if (!rate_limit_check('upload', $uploadLimit, (int)$cfg['rate_window_seconds'])) {
+    friendly_error('Rate limit reached: max ' . $uploadLimit . ' uploads per 10 minutes per IP.', 429);
 }
 
 $me = current_user();
@@ -43,8 +40,8 @@ if (mb_strlen($content) < 1) {
     flash_set('error', 'Content cannot be empty.');
     redirect('index.php');
 }
-if (mb_strlen($content) > (int)$cfg['max_content_chars']) {
-    flash_set('error', 'Content too long (max ' . $cfg['max_content_chars'] . ' chars).');
+if (mb_strlen($content) > $contentLimit) {
+    flash_set('error', 'Content too long (max ' . $contentLimit . ' chars).');
     redirect('index.php');
 }
 

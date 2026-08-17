@@ -8,16 +8,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!rate_limit_check('forgot', 5, 600)) {
         friendly_error('Too many reset attempts from your IP. Try again in 10 minutes.', 429);
     }
-    if (!captcha_ok((string)($_POST['captcha'] ?? ''))) {
-        flash_set('error', 'Wrong captcha answer. Try again.');
-        redirect('forgot.php');
-    }
     $username = trim((string)($_POST['username'] ?? ''));
     $key = trim((string)($_POST['recovery_key'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
     $confirm = (string)($_POST['confirm'] ?? '');
-    if (strlen($password) < 4) {
-        flash_set('error', 'New password must be at least 4 characters.');
+    if (strlen($password) < 6 || strlen($password) > 200) {
+        flash_set('error', 'New password must be 6-200 characters.');
         redirect('forgot.php');
     }
     if ($password !== $confirm) {
@@ -51,10 +47,7 @@ if (current_user() !== null) {
     redirect('index.php');
 }
 
-captcha_issue(true);
-
-page_header('Forgot password');
-?>
+page_header('Forgot password');?>
 <div class="container" style="max-width: 440px;">
     <div class="card">
         <div class="card-body">
@@ -73,23 +66,12 @@ page_header('Forgot password');
                     <div class="form-text">Found in Settings → Recovery key, or in the file you downloaded at registration.</div>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">New password (min 4 chars)</label>
-                    <input class="form-control" type="password" name="password" required minlength="4">
+                    <label class="form-label">New password (6-200 chars)</label>
+                    <input class="form-control" type="password" name="password" required minlength="6" maxlength="200">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Confirm new password</label>
-                    <input class="form-control" type="password" name="confirm" required minlength="4">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Security check</label>
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <img src="captcha.php?v=<?= time() ?>" alt="captcha" width="160" height="56"
-                            style="border-radius:8px;border:1px solid var(--line);">
-                        <button type="button" class="btn btn-sm btn-outline-light" onclick="this.previousElementSibling.src='captcha.php?rot=1&v='+Date.now()"
-                            title="New captcha">↻</button>
-                    </div>
-                    <input class="form-control" name="captcha" maxlength="6" required autocomplete="off"
-                        placeholder="Type the characters above">
+                    <input class="form-control" type="password" name="confirm" required minlength="6" maxlength="200">
                 </div>
                 <button class="btn btn-primary w-100" type="submit">Reset password</button>
                 <p class="text-secondary small mt-3 mb-0">Remembered it? <a class="link-light" href="login.php">Back to login</a></p>

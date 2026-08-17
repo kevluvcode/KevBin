@@ -26,7 +26,10 @@ $cfg = $GLOBALS['CFG'];
 
 // Password lock: content stays hidden until unlocked via session once per browser.
 $locked = !empty($paste['password_hash']);
-$unlocked = !empty($_SESSION['paste_unlocked'][$id]);
+$unlockHours = (float)($cfg['unlock_session_hours'] ?? 6);
+$unlockExpiry = (int)($_SESSION['paste_unlocked_exp'][$id] ?? 0);
+$unlocked = !empty($_SESSION['paste_unlocked'][$id])
+    && ($unlockHours <= 0 || time() < $unlockExpiry);
 if ($locked && !$unlocked) {
     $lockError = null;
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['paste_password']) && csrf_verify()) {
@@ -35,6 +38,7 @@ if ($locked && !$unlocked) {
         }
         if (password_verify((string)$_POST['paste_password'], $paste['password_hash'])) {
             $_SESSION['paste_unlocked'][$id] = true;
+            $_SESSION['paste_unlocked_exp'][$id] = time() + (int)($unlockHours * 3600);
             $unlocked = true;
             redirect('view.php?id=' . urlencode($id));
         }

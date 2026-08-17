@@ -1,0 +1,21 @@
+name = "kevbin-discord-bridge"
+main = "src/worker.js"
+compatibility_date = "2026-01-01"
+
+# Fill in YOUR values, then copy this file to wrangler.toml (never commit real creds).
+[vars]
+DISCORD_CLIENT_ID = ""
+DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
+REDIRECT_URI = "https://kevbin.ct.ws/discord_oauth.php"
+# Guilds the bot auto-adds Discord-login users to (scope guilds.join).
+DISCORD_GUILD_IDS = ""
+# Base URL of the site the /link command points to.
+KEVBIN_BASE_URL = "https://kevbin.ct.ws/"
+
+# The secrets go here OR (better) via:  wrangler secret put DISCORD_CLIENT_SECRET
+DISCORD_CLIENT_SECRET = ""
+# Bot token that performs the auto-join (must be in the guilds above).
+# Put via:  wrangler secret put DISCORD_BOT_TOKEN
+DISCORD_BOT_TOKEN = ""
+# Public Key from Discord Dashboard -> General Information (for /interactions).
+# Put via:  wrangler secret put DISCORD_PUBLIC_KEY

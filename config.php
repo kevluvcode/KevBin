@@ -1,58 +1,77 @@
 <?php
 // =====================================================================
 //  KevBin — configuration file
-//  =====================================================================
-//  This is the ONLY file you must edit after installing.
-//  Best host: InfinityFree (https://www.infinityfree.com) — free MySQL.
-//  The official demo site is https://kevbin.ct.ws/ — change base_url
-//  below to your own domain.
-//
+// =====================================================================
+//  Copy this file to config.php and fill in your own credentials.
 //  NEVER commit real credentials to a public repository.
 // =====================================================================
 $CFG = [
-    // Your InfinityFree (or other) MySQL details go here.
-    'db_host' => 'sqlXXX.infinityfree.com', // your MySQL hostname
-    'db_name' => 'if0_00000000_yourdbname', // database name
-    'db_user' => 'if0_00000000',            // database username
-    'db_pass' => 'your_database_password',  // database password
+    'db_host' => 'YOUR_DB_HOST',
+    'db_name' => 'YOUR_DB_NAME',
+    'db_user' => 'YOUR_DB_USER',
+    'db_pass' => 'YOUR_DB_PASS',
 
-    // Change this to your own domain (keep the trailing slash).
-    'base_url' => 'https://kevbin.ct.ws/',  // official site — replace with yours
+    'base_url' => 'https://yourdomain.com/',
     'site_name' => 'KevBin',
     'debug' => false,
 
-    // Let the app apply the votes/comments/metadata schema automatically when it is
-    // first needed (idempotent — safe to leave on). Set to false to skip; you can
-    // always run schema_upgrade2.sql by hand instead.
     'auto_migrate' => true,
 
-    // Custom salt used to hash account-recovery keys at rest (never change it
-    // after accounts exist, or stored recovery keys stop matching).
-    // Generate your own with:  php -r "echo bin2hex(random_bytes(32));"
-    'recovery_salt' => 'CHANGE_ME_64_HEX_CHARACTERS',
+    'recovery_salt' => 'GENERATE_A_RANDOM_64_CHAR_HEX_STRING',
 
-    // GitHub OAuth sign-in (optional). Create a GitHub App with the OAuth flow,
-    // set its redirect URI to https://your-site/github_oauth.php and paste your
-    // own credentials here. Leave the secret empty to hide the buttons.
-    'github_client_id' => 'YOUR_GITHUB_CLIENT_ID',
+    // GitHub OAuth sign-in.
+    'github_client_id' => '',
     'github_client_secret' => '',
 
-    // "Fork / Star / Watch" buttons target (top-right of every page).
-    'github_repo_url' => 'https://github.com/YOUR_USERNAME/kevbin',
+    // Discord OAuth sign-in via a Cloudflare Worker bridge (the worker holds the
+    // client_secret — it never lives in this repo).
+    'discord_client_id' => '',
+    'discord_bridge_url' => 'https://YOUR_WORKER_STILL_THUNDER.workers.dev',
+    // Worker for tools (proxy, webhook sender, port scanner, etc.)
+    'worker_url' => 'https://YOUR_WORKER_AUTUMN_TERM.workers.dev',
+    // Scopes asked on the Dashboard "Connect Discord & fetch everything" flow.
+    'discord_export_scope' => 'identify guilds connections',
 
-    // SEO / social share metadata (used in <meta>/OpenGraph/Twitter tags on every page)
+    'github_repo_url' => '',
+
+    // Support / donations.
+    'bitcoin_address' => '',
+    'donation_contact' => '',
+
+    // Premium tiers (shown on support.php, granted by verified BTC payment or
+    // manually by admins). 'days' = 0 means lifetime (never expires).
+    'premium_tiers' => [
+        'supporter' => ['name' => 'Supporter', 'price_usd' => 5,  'days' => 30,  'chars' => 500000,  'badge' => 'SUPPORTER'],
+        'pro'       => ['name' => 'Pro',       'price_usd' => 10, 'days' => 30,  'chars' => 1000000, 'badge' => 'PRO'],
+        'lifetime'  => ['name' => 'Lifetime',  'price_usd' => 40, 'days' => 0,   'chars' => 1000000, 'badge' => 'LIFETIME'],
+    ],
+
+    // BTC auto-verification (mempool.space, fallback blockstream.info).
+    'btc_scan_interval' => 300,
+    'btc_scan_timeout' => 12,
+    'btc_wallet_floor_sats' => 1000,
+
+    // Free-tier limits.
+    'max_content_chars' => 100000,
+
     'meta_description' => 'Paste & share text online. Free, anonymous and super secure.',
-    'logo_url' => '',                       // e.g. https://kevbin.ct.ws/logo.png (used as og:image)
-    'twitter_handle' => '',                 // e.g. @kevbin
-    'google_site_verification' => '',       // the token inside Google's google-site-verification meta tag
+    'logo_url' => '',
+    'twitter_handle' => '',
+    'google_site_verification' => '',
 
     'watermark' => true,
     'watermark_keyword' => true,
 
+    'captcha' => true,
+    'captcha_timeout' => 900,
+    'captcha_attempts' => 3,
+
     'max_title_chars' => 120,
     'max_author_chars' => 50,
     'max_content_chars' => 100000,
-
+    'premium_content_mult' => 5,
+    'upload_max_mb' => 20,
+    'premium_upload_mult' => 4,
     'upload_rate_limit' => 10,
     'login_rate_limit' => 5,
     'report_rate_limit' => 5,
@@ -67,9 +86,12 @@ $CFG = [
     'rate_window_seconds' => 600,
     'per_page' => 20,
 
-    // File uploads (files.php). Storage folder is relative to htdocs and must
-    // exist on the server; per-file size cap and the allow-listed extensions.
+    'unlock_session_hours' => 6,
+
     'uploads_dir' => 'uploads/',
     'upload_max_mb' => 20,
-    'upload_exts' => 'png,jpg,jpeg,gif,webp,mp3,ogg,wav,mp4,webm,pdf,txt,md,json,csv,log,xml,yaml,zip,gz,doc,docx,xls,xlsx,ppt,pptx',
+    'file_analysis_max_mb' => 200,
+    'upload_exts' => '',
+    'upload_blocked_exts' => 'php,js,html',
+    'upload_blocked_names' => 'index.html,index.htm,index.php,index.phtml',
 ];

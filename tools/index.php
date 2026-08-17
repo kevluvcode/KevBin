@@ -13,6 +13,30 @@ page_header('Tools');
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🔐 Hash Generator</h3>
+                <p class="text-secondary small flex-grow-1">MD5 / SHA-1 / SHA-2 (224–512) / SHA-3 / CRC32 / HMAC plus a "what hash is this?" identifier — and file checksums.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="hash/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🔏 JWT Decoder</h3>
+                <p class="text-secondary small flex-grow-1">Decode any JWT header, payload & signature, verify HS256/384/512 against a secret, and read expiry claims.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="jwt-decoder/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🔎 Regex Tester</h3>
+                <p class="text-secondary small flex-grow-1">Test live regular expressions against text with match highlighting, capture-group details and a flag reference.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="regex-tester/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🕶 HTML &amp; JS Obfuscator</h3>
                 <p class="text-secondary small flex-grow-1">Hardened in-browser obfuscator with 6 strength levels — minify, string/number encoding, XOR decoder pool, safe variable renaming, VM wrapper, junk & anti-debug.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="js-obfuscator/">Open</a>
@@ -29,17 +53,17 @@ page_header('Tools');
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🔐 Hash Generator</h3>
-                <p class="text-secondary small flex-grow-1">MD5 / SHA-1 / SHA-256 / SHA-512 checksums plus a "what hash is this?" identifier.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="hash/">Open</a>
+                <h3 class="h6 mb-2">🎲 UID Generator</h3>
+                <p class="text-secondary small flex-grow-1">UUID v4, hex tokens, base64 secret keys, strong passwords and memorable passphrases.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="uid/">Open</a>
             </div></div>
         </div>
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🎲 UID Generator</h3>
-                <p class="text-secondary small flex-grow-1">UUID v4, hex tokens, base64 secret keys, strong passwords and memorable passphrases.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="uid/">Open</a>
+                <h3 class="h6 mb-2">🏛 Classic Ciphers</h3>
+                <p class="text-secondary small flex-grow-1">Vigenère, Beaufort, Atbash, Affine, Caesar and Rail Fence — encrypt/decrypt with keys. All in your browser.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="ciphers/">Open</a>
             </div></div>
         </div>
 
@@ -47,6 +71,54 @@ page_header('Tools');
 
     <h2 class="h6 mb-3 reveal in-view" style="border-bottom:1px solid var(--line);padding-bottom:.5rem;">💻 Developer</h2>
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mb-4">
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🧮 JSON Formatter</h3>
+                <p class="text-secondary small flex-grow-1">Pretty-print minified JSON with clean indentation, minify it back and validate with instant syntax errors.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="json-formatter/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🔢 Base64 Decoder</h3>
+                <p class="text-secondary small flex-grow-1">Encode and decode Base64 both directions with UTF-8 support — perfect for data URIs, tokens and payloads.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="base64-decoder/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🌐 Subnet Calculator</h3>
+                <p class="text-secondary small flex-grow-1">Network, broadcast, usable hosts, CIDR, masks and binary layout — with explanations.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="subnet-calculator/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">📦 Hex Dump</h3>
+                <p class="text-secondary small flex-grow-1">Classic hexdump of any text with offsets, hex and ASCII columns.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="hex-dump/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🕒 Cron Parser</h3>
+                <p class="text-secondary small flex-grow-1">Turn any cron expression into plain English plus the next times it will fire.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="cron-parser/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🎨 Color Converter</h3>
+                <p class="text-secondary small flex-grow-1">Convert between HEX, RGB, HSL and CMYK with a color picker and WCAG contrast hints.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="color-converter/">Open</a>
+            </div></div>
+        </div>
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
@@ -66,8 +138,8 @@ page_header('Tools');
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🎯 SHA-256 Cracker</h3>
-                <p class="text-secondary small flex-grow-1">Wordlist and brute-force attempts to recover weak SHA-256 inputs. Educational — capped at 6 seconds.</p>
+                <h3 class="h6 mb-2">🎯 Hash Cracker</h3>
+                <p class="text-secondary small flex-grow-1">Recover weak MD5 / SHA / NTLM / CRC32 inputs — common-password rules, dates, digits and keyboard-walk attacks. Multiple hashes at once, time-limited on the server.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="crack/">Open</a>
             </div></div>
         </div>
@@ -90,17 +162,60 @@ page_header('Tools');
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🎨 Color Converter</h3>
-                <p class="text-secondary small flex-grow-1">Convert between HEX, RGB, HSL and CMYK with a color picker.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="color/">Open</a>
+                <h3 class="h6 mb-2">⚡ HTTP Request Builder</h3>
+                <p class="text-secondary small flex-grow-1">Compose a request visually and generate ready-to-run curl, JavaScript fetch and Python requests code.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="reqbuild/">Open</a>
             </div></div>
         </div>
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🌐 IP / Subnet Calc</h3>
-                <p class="text-secondary small flex-grow-1">Network, broadcast, usable hosts, CIDR, masks and binary layout — with explanations.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="net/">Open</a>
+                <h3 class="h6 mb-2">🪝 Discord Webhook Sender</h3>
+                <p class="text-secondary small flex-grow-1">Send rich embeds and plain messages to any Discord webhook URL — colour, author, footer, fields, timestamps and images, routed through our proxy.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="webhook/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">⚡ Discord Webhook Spammer</h3>
+                <p class="text-secondary small flex-grow-1">Send multiple messages to a webhook to test rate limits and flood behavior — sequential delivery with full response logging.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="webhook-spam/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ Educational use only — test your own webhooks.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🗑 Discord Webhook Deleter</h3>
+                <p class="text-secondary small flex-grow-1">Permanently delete a Discord webhook by URL — irreversible, sends DELETE to Discord's API via our proxy.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="webhook-delete/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🔗 Link Spoof / Obfuscator</h3>
+                <p class="text-secondary small flex-grow-1">Disguise URLs through percent encoding, Unicode homoglyphs, @ tricks, IP decimal and cascading through multiple shorteners (TinyURL, is.gd, da.gd, CleanURI).</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="link-spoof/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ For phishing awareness &amp; security education.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">⚡ Discord Webhook Spammer</h3>
+                <p class="text-secondary small flex-grow-1">Send multiple messages to a webhook to test rate limits and flood behavior — sequential delivery with full response logging.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="webhook-spam/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ Educational use only — test your own webhooks.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🗑 Discord Webhook Deleter</h3>
+                <p class="text-secondary small flex-grow-1">Permanently delete a Discord webhook by URL — irreversible, sends DELETE to Discord's API via our proxy.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="webhook-delete/">Open</a>
             </div></div>
         </div>
 
@@ -114,6 +229,14 @@ page_header('Tools');
                 <h3 class="h6 mb-2">📊 Text Tools</h3>
                 <p class="text-secondary small flex-grow-1">Case converter, text analyzer (words/read-time), lorem ipsum generator and a diff checker.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="text/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🎨 ASCII Art Generator</h3>
+                <p class="text-secondary small flex-grow-1">328 classic FIGlet fonts (Standard, Slant, Banner, Doom and more) rendered on the server — or convert any image into block ASCII art in your browser.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="asciiart/">Open</a>
             </div></div>
         </div>
 
@@ -140,6 +263,15 @@ page_header('Tools');
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">📚 Wordlist Generator</h3>
+                <p class="text-secondary small flex-grow-1">Build password/wordlist candidates like real cracking tools: 1337 speak, case changes, keyboard walks, date patterns, separators and multi-word combos from an extra word pool. See how a dictionary attack would hit your own passwords.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="wordlist/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ For testing your own accounts & education.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🔲 QR Code Generator</h3>
                 <p class="text-secondary small flex-grow-1">QR codes for URLs, Wi-Fi strings or any text with custom size, margin and colors.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="qr/">Open</a>
@@ -151,14 +283,6 @@ page_header('Tools');
                 <h3 class="h6 mb-2">⏱ Timestamp Converter</h3>
                 <p class="text-secondary small flex-grow-1">Unix timestamps ↔ human dates, both directions, with handy presets.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="timestamp/">Open</a>
-            </div></div>
-        </div>
-
-        <div class="col reveal">
-            <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">🕒 Cron Explainer</h3>
-                <p class="text-secondary small flex-grow-1">Turn a cron expression into plain English plus the next times it will fire.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="crontab/">Open</a>
             </div></div>
         </div>
 
@@ -212,14 +336,6 @@ page_header('Tools');
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
-                <h3 class="h6 mb-2">📦 Hex Dump</h3>
-                <p class="text-secondary small flex-grow-1">Classic hexdump of any text with offsets, hex and ASCII columns.</p>
-                <a class="btn btn-outline-light btn-sm mt-2" href="hexdump/">Open</a>
-            </div></div>
-        </div>
-
-        <div class="col reveal">
-            <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">⏳ Date Duration</h3>
                 <p class="text-secondary small flex-grow-1">Difference between two dates in every unit, or add a duration to a date.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="duration/">Open</a>
@@ -234,9 +350,66 @@ page_header('Tools');
             </div></div>
         </div>
 
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">📸 Photo Metadata</h3>
+                <p class="text-secondary small flex-grow-1">Extract EXIF, IPTC, XMP and ICC data from photos — camera model, lens, GPS coordinates, date taken, shutter speed, aperture and more.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="photo-meta/">Open</a>
+            </div></div>
+        </div>
+
     </div>
 
-    <h2 class="h6 mb-3 reveal in-view" style="border-bottom:1px solid var(--line);padding-bottom:.5rem;">🔍 OSINT & Research</h2>
+    <h2 class="h6 mb-3 reveal in-view" style="border-bottom:1px solid var(--line);padding-bottom:.5rem;">🎯 Offensive Security &amp; Recon</h2>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mb-4">
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🔓 TCP Port Scanner</h3>
+                <p class="text-secondary small flex-grow-1">Lightweight TCP connect() probe of common ports on any public host you own — flagged open/closed/filtered. Rate-limited, single connection per port.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="portscan/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ Only scan hosts you own or have permission to test.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">📡 Subdomain Finder</h3>
+                <p class="text-secondary small flex-grow-1">Passive subdomain enumeration via Certificate Transparency logs (crt.sh) — every TLS cert ever issued for a domain leaks its subdomains. No contact with the target.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="subenum/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ Passive OSINT — legal use only.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🔄 Reverse IP Lookup</h3>
+                <p class="text-secondary small flex-grow-1">Which domains point at this IP? Passive public-DNS queries (HackerTarget) — inventory shared hosting you manage before a pen-test.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="revip/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ Legal use only.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🌍 ASN / BGP Lookup</h3>
+                <p class="text-secondary small flex-grow-1">Find the autonomous system (network operator) behind an IP or AS number via RIPEStat + ipwho.is — map who really operates a network.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="asnintel/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ Legal use only.</span>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">🗂 MAC Vendor Lookup</h3>
+                <p class="text-secondary small flex-grow-1">Map a MAC address's OUI to its manufacturer — identify the mystery device on your network (is that a Raspberry Pi or an intruder?).</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="macfind/">Open</a>
+            </div></div>
+        </div>
+
+    </div>
+
+    <h2 class="h6 mb-3 reveal in-view" style="border-bottom:1px solid var(--line);padding-bottom:.5rem;">🔍 OSINT &amp; Research</h2>
     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mb-4">
 
         <div class="col reveal">

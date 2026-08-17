@@ -13,7 +13,7 @@ A pastebin for the anonymity-minded: dark, fast, "secure & untraceable" — with
 - Short links with a Grabify-style click tracker (IP, device, referrer, VPN/proxy/Tor detection)
 - Password locks on pastes, staff roles, request queue, IP bans
 - Read-only public API (`api.php`) + CORS-friendly bypass proxy (`api_proxy.php`)
-- 35+ tools: Lua obfuscator, Lua runner (server-side interpreter), SHA-256 cracker (6s capped), JWT inspector, minifier, UID generator, hashes, encoders, QR, DNS, WHOIS/RDAP, header inspector, password generator, a private clearnet search engine (server-side DuckDuckGo proxy) and a dark-web (.onion) search gateway for Tor Browser & more
+- 35+ tools: Lua obfuscator, Lua runner (server-side interpreter), SHA-256 cracker (6s capped), JWT inspector, minifier, UID generator, hashes, encoders, QR, DNS, WHOIS/RDAP, header inspector, password generator & more
 - Per-user UI theme: choose your own site background (solid color or gradient), layout width (compact / default / wide) and accent color from Settings
 - Account recovery keys: one-time random key shown at registration (no email needed) with a `forgot.php` reset flow
 - Custom captcha on login / registration / password reset

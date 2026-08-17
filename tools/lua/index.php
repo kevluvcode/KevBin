@@ -30,7 +30,19 @@ page_header('Lua Runner');
         <p class="text-secondary small mt-2 mb-0">Supports: variables, if/while/for, functions, tables, print, string &amp; math helpers (math.floor, string.upper...). Runs fully in your browser — no files, no network. Pairs/ipairs, goto and OOP are not supported by the tiny interpreter.</p>
     </div></div>
 </div>
-<script src="<?= e(url('assets/fengari-web.js')) ?>"></script>
+<script><?php
+// Inline the Fengari engine directly into this page (PHP embeds the real JS).
+// We can't `<script src>` it: InfinityFree's bot-check serves JS assets as an
+// HTML challenge (text/html), which browsers refuse to execute, so window.fengari
+// would never be defined. Served inline, it ships inside the page response the
+// bot-check already let through — guaranteeing the VM loads.
+$__feng = @file_get_contents(__DIR__ . '/../../assets/fengari-web.js');
+if ($__feng !== false && strpos($__feng, 'fengari') !== false) {
+    echo $__feng;
+} else {
+    echo 'window.fengari = null;';
+}
+?></script>
 <script>
 var fengari = window.fengari;
 

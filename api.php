@@ -28,6 +28,8 @@ function api_err(string $msg, int $status = 400): void
 
 // Read-only public API: everything here is free to use, but nothing can be
 // posted/created and user browsing is intentionally not exposed.
+// Public API docs point to the Cloudflare Worker proxy, but api.php still
+// serves the database directly (the worker proxies through here).
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     api_err('This API is read-only. POST/PUT/DELETE are not allowed.', 405);
 }
@@ -47,39 +49,54 @@ const TOOLS = [
     ['category' => 'Code & Security', 'name' => 'Lua Obfuscator', 'path' => 'tools/lua-obfuscator/'],
     ['category' => 'Code & Security', 'name' => 'Hash Generator', 'path' => 'tools/hash/'],
     ['category' => 'Code & Security', 'name' => 'UID Generator', 'path' => 'tools/uid/'],
-    ['category' => 'Code & Security', 'name' => 'JWT Inspector', 'path' => 'tools/jwt/'],
+    ['category' => 'Code & Security', 'name' => 'JWT Decoder', 'path' => 'tools/jwt-decoder/'],
     ['category' => 'Code & Security', 'name' => 'Password Strength', 'path' => 'tools/passcheck/'],
     ['category' => 'Code & Security', 'name' => 'Cipher Decrypter', 'path' => 'tools/decrypt/'],
     ['category' => 'Code & Security', 'name' => 'Minifier', 'path' => 'tools/minify/'],
+    ['category' => 'Code & Security', 'name' => 'Classic Ciphers', 'path' => 'tools/ciphers/'],
     ['category' => 'Developer', 'name' => 'Dev Toolkit', 'path' => 'tools/dev/'],
     ['category' => 'Developer', 'name' => 'Encoders', 'path' => 'tools/encoders/'],
     ['category' => 'Developer', 'name' => 'Unit Converter', 'path' => 'tools/convert/'],
-    ['category' => 'Developer', 'name' => 'Color Converter', 'path' => 'tools/color/'],
-    ['category' => 'Developer', 'name' => 'IP / Subnet Calc', 'path' => 'tools/net/'],
+    ['category' => 'Developer', 'name' => 'Color Converter', 'path' => 'tools/color-converter/'],
+    ['category' => 'Developer', 'name' => 'Subnet Calculator', 'path' => 'tools/subnet-calculator/'],
+    ['category' => 'Developer', 'name' => 'HTTP Request Builder', 'path' => 'tools/reqbuild/'],
     ['category' => 'Text', 'name' => 'Text Tools', 'path' => 'tools/text/'],
     ['category' => 'Text', 'name' => 'Random Generator', 'path' => 'tools/random/'],
+    ['category' => 'Text', 'name' => 'ASCII Art Generator', 'path' => 'tools/asciiart/'],
     ['category' => 'Text', 'name' => 'Alphabetizer', 'path' => 'tools/sort/'],
     ['category' => 'Handy Utilities', 'name' => 'Password Generator', 'path' => 'tools/password/'],
+    ['category' => 'Handy Utilities', 'name' => 'Wordlist Generator', 'path' => 'tools/wordlist/'],
     ['category' => 'Handy Utilities', 'name' => 'QR Code Generator', 'path' => 'tools/qr/'],
     ['category' => 'Handy Utilities', 'name' => 'Timestamp Converter', 'path' => 'tools/timestamp/'],
-    ['category' => 'Handy Utilities', 'name' => 'Cron Explainer', 'path' => 'tools/crontab/'],
+    ['category' => 'Handy Utilities', 'name' => 'Cron Parser', 'path' => 'tools/cron-parser/'],
     ['category' => 'Handy Utilities', 'name' => 'Slug Generator', 'path' => 'tools/slug/'],
     ['category' => 'Handy Utilities', 'name' => 'CSV / JSON Converter', 'path' => 'tools/csv/'],
     ['category' => 'Handy Utilities', 'name' => 'CSS Gradient Generator', 'path' => 'tools/gradient/'],
     ['category' => 'Handy Utilities', 'name' => 'Contrast Checker', 'path' => 'tools/contrast/'],
     ['category' => 'Handy Utilities', 'name' => 'Character Inspector', 'path' => 'tools/charcode/'],
-    ['category' => 'Handy Utilities', 'name' => 'Hex Dump', 'path' => 'tools/hexdump/'],
+    ['category' => 'Handy Utilities', 'name' => 'Hex Dump', 'path' => 'tools/hex-dump/'],
     ['category' => 'Handy Utilities', 'name' => 'Date Duration', 'path' => 'tools/duration/'],
     ['category' => 'Handy Utilities', 'name' => 'Image / Base64', 'path' => 'tools/imgbase64/'],
     ['category' => 'OSINT & Research', 'name' => 'OSINT Toolkit', 'path' => 'tools/osint/'],
     ['category' => 'OSINT & Research', 'name' => 'Username Search', 'path' => 'tools/username/'],
+    ['category' => 'OSINT & Research', 'name' => 'Subdomain Finder', 'path' => 'tools/subenum/'],
+    ['category' => 'OSINT & Research', 'name' => 'Reverse IP Lookup', 'path' => 'tools/revip/'],
+    ['category' => 'OSINT & Research', 'name' => 'ASN / BGP Lookup', 'path' => 'tools/asnintel/'],
+    ['category' => 'OSINT & Research', 'name' => 'MAC Vendor Lookup', 'path' => 'tools/macfind/'],
+    ['category' => 'OSINT & Research', 'name' => 'Port Scanner', 'path' => 'tools/portscan/'],
     ['category' => 'OSINT & Research', 'name' => 'DNS Lookup', 'path' => 'tools/dns/'],
     ['category' => 'OSINT & Research', 'name' => 'Header Inspector', 'path' => 'tools/headers/'],
+    ['category' => 'Developer', 'name' => 'Discord Webhook Sender', 'path' => 'tools/webhook/'],
+    ['category' => 'Developer', 'name' => 'Discord Webhook Spammer', 'path' => 'tools/webhook-spam/'],
+    ['category' => 'Developer', 'name' => 'Discord Webhook Deleter', 'path' => 'tools/webhook-delete/'],
+    ['category' => 'Developer', 'name' => 'Link Spoof / Obfuscator', 'path' => 'tools/link-spoof/'],
+    ['category' => 'Handy Utilities', 'name' => 'Photo Metadata', 'path' => 'tools/photo-meta/'],
 ];
 
 switch ($action) {
-    case 'pastes': // Public paste feed (read-only).
+    case 'pastes': // Public paste feed (read-only). Supports ?limit= and ?offset= for pagination.
         $limit = max(1, min(100, (int)($_GET['limit'] ?? 20)));
+        $offset = max(0, (int)($_GET['offset'] ?? 0));
         $stmt = $pdo->prepare(
             'SELECT p.id, p.title, p.author, p.created_at, p.views, p.user_id,
                     u.username AS owner_name, u.profile_color AS owner_color
@@ -88,9 +105,10 @@ switch ($action) {
              WHERE (p.expires_at IS NULL OR p.expires_at > UTC_TIMESTAMP())
                AND p.password_hash IS NULL
              ORDER BY p.created_at DESC
-             LIMIT ?'
+             LIMIT ? OFFSET ?'
         );
         $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+        $stmt->bindValue(2, $offset, PDO::PARAM_INT);
         $stmt->execute();
         $items = [];
         foreach ($stmt->fetchAll() as $row) {
@@ -108,6 +126,8 @@ switch ($action) {
         api_out([
             'site' => $GLOBALS['CFG']['site_name'],
             'generated_at' => gmdate('c'),
+            'limit' => $limit,
+            'offset' => $offset,
             'count' => count($items),
             'pastes' => $items,
         ]);
@@ -198,6 +218,23 @@ switch ($action) {
             'generated_at' => gmdate('c'),
             'user_count' => (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn(),
             'note' => 'User browsing is not available via the API.',
+        ]);
+
+    case 'updates': // Public update log.
+        $stmt = $pdo->query('SELECT id, title, content, created_at FROM updates ORDER BY created_at DESC LIMIT 20');
+        $items = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $items[] = [
+                'id' => (int)$row['id'],
+                'title' => $row['title'],
+                'content' => $row['content'],
+                'created_at' => $row['created_at'],
+            ];
+        }
+        api_out([
+            'site' => $GLOBALS['CFG']['site_name'],
+            'generated_at' => gmdate('c'),
+            'updates' => $items,
         ]);
 
     default:

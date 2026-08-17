@@ -60,6 +60,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('admin.php?tab=users');
     }
 
+    // ——— Premium / supporter management (admins only) ———
+    if (in_array($action, ['premiumgrant', 'premiumrevoke'], true)) {
+        if (!$isAdmin) {
+            flash_set('error', 'Only admins can manage premium.');
+            redirect('admin.php?tab=users');
+        }
+        $target = (int)($_POST['user_id'] ?? 0);
+        $stmt = $pdo->prepare('SELECT id, username FROM users WHERE id = ?');
+        $stmt->execute([$target]);
+        $targetUser = $stmt->fetch();
+        if (!$targetUser) {
+            flash_set('error', 'User not found.');
+        } elseif ($action === 'premiumgrant') {
+            $plan = (string)($_POST['plan'] ?? 'supporter');
+            if ($plan === 'monthly') {
+                $plan = 'supporter'; // legacy
+            }
+            if (!in_array($plan, ['supporter', 'pro', 'lifetime'], true)) {
+                $plan = 'supporter';
+            }
+            $months = max(1, min(120, (int)($_POST['months'] ?? 1)));
+            $expires = $plan === 'lifetime' ? null : gmdate('Y-m-d H:i:s', time() + $months * 30 * 86400);
+            $pdo->prepare('UPDATE users SET premium_plan = ?, premium_expires_at = ? WHERE id = ?')
+                ->execute([$plan, $expires, $target]);
+            log_activity('premium_grant', $targetUser['username'] . ' ' . $plan . ($expires !== null ? ' ' . $months . 'mo' : ' lifetime'));
+            flash_set('success', $targetUser['username'] . ' granted ' . $plan . ' premium' . ($expires !== null ? ' for ' . $months . ' month(s).' : ' (lifetime).'));
+        } else {
+            $pdo->prepare("UPDATE users SET premium_plan = '', premium_expires_at = NULL WHERE id = ?")
+                ->execute([$target]);
+            log_activity('premium_revoke', $targetUser['username']);
+            flash_set('success', $targetUser['username'] . ' premium revoked.');
+        }
+        redirect('admin.php?tab=users');
+    }
+
+    // ——— BTC payment records (admins only) ———
+    if (in_array($action, ['paymentverify', 'paymentreject', 'paymentdelete', 'paymentscan'], true)) {
+        if (!$isAdmin) {
+            flash_set('error', 'Only admins can manage payments.');
+            redirect('admin.php?tab=payments');
+        }
+        if ($action === 'paymentscan') {
+            $stats = scan_btc_payments();
+            flash_set('success', 'Scan complete: ' . $stats['processed'] . ' payment(s) verified' . ($stats['scanned'] ? ', wallet checked.' : ' (block explorer unreachable from this host).'));
+            redirect('admin.php?tab=payments');
+        }
+        $pid = (int)($_POST['payment_id'] ?? 0);
+        $stmt = $pdo->prepare('SELECT * FROM premium_payments WHERE id = ?');
+        $stmt->execute([$pid]);
+        $pay = $stmt->fetch();
+        if (!$pay) {
+            flash_set('error', 'Payment not found.');
+        } elseif ($action === 'paymentverify') {
+            if ((string)$pay['username'] === '') {
+                flash_set('error', 'That payment has no claimant yet — wait for the user to claim it on support.php.');
+            } else {
+                $tier = (string)$pay['plan'];
+                if (!isset(premium_tiers()[$tier])) {
+                    $tier = 'supporter';
+                }
+                $days = (int)(premium_tiers()[$tier]['days'] ?? 30);
+                $pdo->prepare("UPDATE premium_payments SET status = 'verified', verified_at = UTC_TIMESTAMP() WHERE id = ?")->execute([$pid]);
+                grant_premium((string)$pay['username'], $tier, $days > 0 ? $days : null);
+                flash_set('success', 'Payment verified manually — ' . $pay['username'] . ' granted ' . $tier . '.');
+            }
+        } elseif ($action === 'paymentreject') {
+            $pdo->prepare("UPDATE premium_payments SET status = 'rejected' WHERE id = ?")->execute([$pid]);
+            flash_set('success', 'Payment rejected.');
+        } elseif ($action === 'paymentdelete') {
+            $pdo->prepare('DELETE FROM premium_payments WHERE id = ?')->execute([$pid]);
+            flash_set('success', 'Payment record deleted.');
+        }
+        redirect('admin.php?tab=payments');
+    }
+
     // ——— Paste actions (admins only) ———
     if (in_array($action, ['pastepin', 'pasteunpin', 'pastedelete', 'pastecolor'], true)) {
         if (!$isAdmin) {
@@ -286,11 +361,25 @@ $users = [];
 $pastes = [];
 $bannedIps = [];
 if ($isAdmin) {
-    $users = $pdo->query(
-        'SELECT u.id, u.username, u.role, u.status, u.created_at,
-                (SELECT COUNT(*) FROM pastes p WHERE p.user_id = u.id) AS paste_count
-         FROM users u ORDER BY u.role DESC, u.username ASC'
-    )->fetchAll();
+    $userSearch = trim((string)($_GET['q'] ?? ''));
+    if ($userSearch !== '') {
+        $userLike = '%' . $userSearch . '%';
+        $usersStmt = $pdo->prepare(
+            'SELECT u.id, u.username, u.role, u.status, u.created_at, u.premium_plan, u.premium_expires_at,
+                    (SELECT COUNT(*) FROM pastes p WHERE p.user_id = u.id) AS paste_count
+             FROM users u
+             WHERE u.username LIKE ? OR CAST(u.id AS CHAR) = ?
+             ORDER BY u.role DESC, u.username ASC'
+        );
+        $usersStmt->execute([$userLike, $userSearch]);
+        $users = $usersStmt->fetchAll();
+    } else {
+        $users = $pdo->query(
+            'SELECT u.id, u.username, u.role, u.status, u.created_at, u.premium_plan, u.premium_expires_at,
+                    (SELECT COUNT(*) FROM pastes p WHERE p.user_id = u.id) AS paste_count
+             FROM users u ORDER BY u.role DESC, u.username ASC'
+        )->fetchAll();
+    }
 
     $pastes = $pdo->query(
         'SELECT p.id, p.title, p.author, p.user_id, p.views, p.pin, p.paste_color, p.created_at,
@@ -309,6 +398,13 @@ if ($isAdmin) {
         )->fetchAll();
     } catch (Throwable $e) {
         // banned_ips table not present yet (run schema_upgrade.sql)
+    }
+
+    $payments = [];
+    try {
+        $payments = $pdo->query('SELECT * FROM premium_payments ORDER BY created_at DESC LIMIT 100')->fetchAll();
+    } catch (Throwable $e) {
+        // premium_payments table not present yet (schema_ensure creates it)
     }
 }
 
@@ -346,6 +442,7 @@ page_header($isAdmin ? 'Admin' : 'Staff');
             <li class="nav-item"><a class="nav-link <?= $tab === 'pastes' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=pastes')) ?>#pastes">Pastes</a></li>
             <li class="nav-item"><a class="nav-link <?= $tab === 'bans' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=bans')) ?>">IP Bans (<?= count($bannedIps) ?>)</a></li>
             <li class="nav-item"><a class="nav-link <?= $tab === 'modqueue' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=modqueue')) ?>">Approvals (<?= $pendingCount ?>)</a></li>
+            <li class="nav-item"><a class="nav-link <?= $tab === 'payments' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=payments')) ?>">Payments (<?= count($payments) ?>)</a></li>
         <?php endif; ?>
         <li class="nav-item"><a class="nav-link <?= $tab === 'requests' ? 'active' : '' ?>" href="<?= e(url('admin.php?tab=requests')) ?>">Requests (<?= $openCount ?>)</a></li>
         <li class="nav-item"><a class="nav-link" href="<?= e(url('admin_errors.php')) ?>">Error Log</a></li>
@@ -525,7 +622,82 @@ page_header($isAdmin ? 'Admin' : 'Staff');
             <?php endif; ?>
         </div>
 
+    <?php elseif ($tab === 'payments'): ?>
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <p class="text-secondary small mb-0">BTC payments claimed on support.php are auto-verified against the block explorer. Override manually here if needed.</p>
+            <form method="post" action="<?= e(url('admin.php?tab=payments')) ?>" class="d-inline">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <button class="btn btn-sm btn-outline-light" type="submit" name="action" value="paymentscan">Scan now</button>
+            </form>
+        </div>
+        <?php if (count($payments) === 0): ?>
+            <div class="alert alert-secondary">No payments yet.</div>
+        <?php else: ?>
+            <div class="table-responsive">
+            <table class="table align-middle">
+                <thead><tr>
+                    <th>Status</th><th>TXID</th><th>User</th><th>Plan</th><th>Sats</th><th>Claimed</th><th></th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($payments as $p): ?>
+                    <?php
+                    $ppStatus = (string)($p['status'] ?? '');
+                    $ppBadge = [
+                        'pending'  => '<span class="badge bg-warning text-dark">PENDING</span>',
+                        'detected' => '<span class="badge bg-info text-dark">DETECTED</span>',
+                        'verified' => '<span class="badge bg-success">VERIFIED</span>',
+                        'rejected' => '<span class="badge bg-danger">REJECTED</span>',
+                    ][$ppStatus] ?? '<span class="badge bg-secondary">' . e($ppStatus) . '</span>';
+                    $ppPlan = premium_tiers()[(string)($p['plan'] ?? '')]['name'] ?? (ucfirst((string)($p['plan'] ?? '')) ?: '—');
+                    ?>
+                    <tr>
+                        <td><?= $ppBadge ?></td>
+                        <td><code class="small"><?= e(substr((string)$p['txid'], 0, 16)) ?>…</code></td>
+                        <td><?= (string)($p['username'] ?? '') !== '' ? e((string)$p['username']) : '<span class="text-secondary">—</span>' ?></td>
+                        <td><?= e($ppPlan) ?></td>
+                        <td><?= isset($p['amount_sats']) && $p['amount_sats'] !== null ? number_format((int)$p['amount_sats']) : '—' ?></td>
+                        <td class="small text-secondary"><?= e(substr((string)$p['created_at'], 0, 16)) ?></td>
+                        <td class="text-end" style="white-space:nowrap;">
+                            <?php if ($ppStatus !== 'verified'): ?>
+                                <form method="post" action="<?= e(url('admin.php?tab=payments')) ?>" class="d-inline">
+                                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                    <input type="hidden" name="payment_id" value="<?= (int)$p['id'] ?>">
+                                    <button class="btn btn-sm btn-success" type="submit" name="action" value="paymentverify">Verify</button>
+                                </form>
+                            <?php endif; ?>
+                            <?php if ($ppStatus !== 'rejected'): ?>
+                                <form method="post" action="<?= e(url('admin.php?tab=payments')) ?>" class="d-inline">
+                                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                    <input type="hidden" name="payment_id" value="<?= (int)$p['id'] ?>">
+                                    <button class="btn btn-sm btn-outline-danger" type="submit" name="action" value="paymentreject">Reject</button>
+                                </form>
+                            <?php endif; ?>
+                            <form method="post" action="<?= e(url('admin.php?tab=payments')) ?>" class="d-inline">
+                                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                <input type="hidden" name="payment_id" value="<?= (int)$p['id'] ?>">
+                                <button class="btn btn-sm btn-outline-secondary" type="submit" name="action" value="paymentdelete" onclick="return confirm('Delete this payment record?');">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+        <?php endif; ?>
+
     <?php elseif ($tab === 'users'): ?>
+        <form method="get" action="<?= e(url('admin.php')) ?>" class="d-flex gap-2 mb-3">
+            <input type="hidden" name="tab" value="users">
+            <input class="form-control" type="search" name="q" maxlength="100"
+                value="<?= e((string)($_GET['q'] ?? '')) ?>" placeholder="Search by username or user ID…">
+            <button class="btn btn-outline-light" type="submit">Search</button>
+            <?php if (trim((string)($_GET['q'] ?? '')) !== ''): ?>
+                <a class="btn btn-outline-secondary" href="<?= e(url('admin.php?tab=users')) ?>">Clear</a>
+            <?php endif; ?>
+        </form>
+        <?php if (count($users) === 0): ?>
+            <div class="alert alert-secondary">No users match your search.</div>
+        <?php else: ?>
         <div class="list-group">
             <?php foreach ($users as $u): ?>
                 <div class="list-group-item d-flex align-items-center gap-2 flex-wrap">
@@ -534,8 +706,24 @@ page_header($isAdmin ? 'Admin' : 'Staff');
                         <?php if ($u['role'] === 'admin'): ?><span class="badge bg-danger">ADMIN</span><?php endif; ?>
                         <?php if ($u['role'] === 'moderator'): ?><span class="badge bg-info">MODERATOR</span><?php endif; ?>
                         <?php if ($u['status'] !== 'active'): ?><span class="badge bg-warning">SUSPENDED</span><?php endif; ?>
+                        <?php if (user_is_premium($u)): ?><?= premium_badge($u) ?><?php endif; ?>
                         <span class="text-secondary small ms-2"><?= (int)$u['paste_count'] ?> pastes</span>
                     </div>
+                    <form method="post" action="<?= e(url('admin.php?tab=users')) ?>" class="d-inline">
+                        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                        <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
+                        <?php if (user_is_premium($u)): ?>
+                            <button class="btn btn-sm btn-outline-warning" type="submit" name="action" value="premiumrevoke">Revoke Premium</button>
+                        <?php else: ?>
+                            <button class="btn btn-sm btn-warning" type="submit" name="action" value="premiumgrant">Grant Premium</button>
+                            <input class="form-control-sm d-inline-block" style="width:80px;" type="number" name="months" value="1" min="1" max="120" title="Months (lifetime ignores this)">
+                            <select class="form-select-sm d-inline-block" style="width:auto;" name="plan" title="Plan type">
+                                <option value="supporter">Supporter</option>
+                                <option value="pro">Pro</option>
+                                <option value="lifetime">Lifetime</option>
+                            </select>
+                        <?php endif; ?>
+                    </form>
                     <form method="post" action="<?= e(url('admin.php?tab=users')) ?>" class="d-inline">
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
@@ -576,6 +764,7 @@ page_header($isAdmin ? 'Admin' : 'Staff');
                 </div>
             <?php endforeach; ?>
         </div>
+        <?php endif; ?>
 
     <?php else: ?>
         <div id="pastes" class="list-group">

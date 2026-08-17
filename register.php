@@ -3,15 +3,17 @@ require_once __DIR__ . '/functions.php';
 
 start_session();
 
+if (isset($_POST['ack_key'])) {
+    csrf_verify_or_fail();
+    unset($_SESSION['pending_recovery_key']);
+    redirect('profile.php?id=' . (int)($_SESSION['user_id'] ?? 0));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify_or_fail();
     $cfg = $GLOBALS['CFG'];
     if (!rate_limit_check('register', 10, (int)$cfg['rate_window_seconds'])) {
         friendly_error('Too many registrations from your IP. Try again in 10 minutes.', 429);
-    }
-    if (!captcha_ok((string)($_POST['captcha'] ?? ''))) {
-        flash_set('error', 'Wrong captcha answer. Try again.');
-        redirect('register.php');
     }
     $username = trim((string)($_POST['username'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
@@ -21,8 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash_set('error', 'Username must be 2-100 chars using letters, numbers, dot, dash, underscore.');
         redirect('register.php');
     }
-    if (strlen($password) < 4) {
-        flash_set('error', 'Password must be at least 4 characters.');
+    if (strlen($password) < 6 || strlen($password) > 200) {
+        flash_set('error', 'Password must be 6-200 characters.');
         redirect('register.php');
     }
     if ($password !== $confirm) {
@@ -67,8 +69,6 @@ $pendingKey = (string)($_SESSION['pending_recovery_key'] ?? '');
 if (current_user() !== null && $pendingKey === '') {
     redirect('index.php');
 }
-
-captcha_issue(true);
 
 page_header('Register');
 ?>
@@ -134,23 +134,12 @@ function downloadKey() {
                     <input class="form-control" name="username" required maxlength="100" autofocus>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Password (min 4 chars)</label>
-                    <input class="form-control" type="password" name="password" required minlength="4">
+                    <label class="form-label">Password (6-200 chars)</label>
+                    <input class="form-control" type="password" name="password" required minlength="6" maxlength="200">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Confirm password</label>
-                    <input class="form-control" type="password" name="confirm" required minlength="4">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Security check</label>
-                    <div class="d-flex align-items-center gap-2 mb-2">
-                        <img src="captcha.php?v=<?= time() ?>" alt="captcha" width="160" height="56"
-                            style="border-radius:8px;border:1px solid var(--line);">
-                        <button type="button" class="btn btn-sm btn-outline-light" onclick="this.previousElementSibling.src='captcha.php?rot=1&v='+Date.now()"
-                            title="New captcha">↻</button>
-                    </div>
-                    <input class="form-control" name="captcha" maxlength="6" required autocomplete="off"
-                        placeholder="Type the characters above">
+                    <input class="form-control" type="password" name="confirm" required minlength="6" maxlength="200">
                 </div>
                 <button class="btn btn-primary w-100" type="submit">Register</button>
                 <?php if (!empty($GLOBALS['CFG']['github_client_id']) && !empty($GLOBALS['CFG']['github_client_secret'])): ?>

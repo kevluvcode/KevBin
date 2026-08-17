@@ -28,7 +28,8 @@ if (!defined('APP_INITIALIZED')) {
         if (session_status() === PHP_SESSION_NONE) {
             ini_set('session.use_strict_mode', '1');
             $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443;
+                || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443
+                || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');
             session_set_cookie_params([
                 'lifetime' => 0,
                 'path' => '/',
@@ -250,7 +251,14 @@ if (!defined('APP_INITIALIZED')) {
         if (!empty($cfg['watermark_keyword']) && $keyword !== null && $keyword !== '') {
             $kw = ' — keyword: ' . $keyword;
         }
-        return "\n\n----\nCreated on " . $cfg['site_name'] . $kw . ' — ' . $cfg['base_url'];
+        $logo = "\n\n----\n"
+            . " __ __ _______    ______  _____   __\n"
+            . " / //_// ____/ |  / / __ )/  _/ | / /\n"
+            . " / ,<  / __/  | | / / __  |/ //  |/ /\n"
+            . " / /| |/ /___  | |/ / /_/ // // /|  /\n"
+            . "/_/ |_/_____/  |___/_____/___/_/ |_/  \n"
+            . "----\nCreated on " . $cfg['site_name'] . $kw . ' — ' . $cfg['base_url'];
+        return $logo;
     }
 
     function current_user(): ?array
@@ -271,7 +279,9 @@ if (!defined('APP_INITIALIZED')) {
                         github, twitch, tiktok, instagram, reddit, snapchat, bluesky, threads, linkedin,
                         bg_image, bg_mode, bg_fit, bg_color, bg_gradient, bg_veil, bg_blur,
                         ui_mode, ui_color, ui_gradient, ui_layout, accent_color,
-                        github_id, github_username, github_avatar
+                        github_id, github_username, github_avatar,
+                        discord_id, discord_username, discord_avatar,
+                        premium_plan, premium_expires_at
                  FROM users WHERE id = ?'
             );
             $stmt->execute([(int)$_SESSION['user_id']]);
@@ -351,6 +361,399 @@ if (!defined('APP_INITIALIZED')) {
     {
         $u = current_user();
         return $u !== null && $u['status'] !== 'active';
+    }
+
+    // ——— Premium tiers ———
+    // Stored on users: premium_plan ('supporter'|'pro'|'lifetime'|'') and
+    // premium_expires_at (NULL = never, or a UTC datetime). Tiers come from
+    // config['premium_tiers']. Grants are automatic (verified BTC payment, see
+    // support.php + the btc scan below) or manual (admin.php).
+
+    function premium_tiers(): array
+    {
+        return (array)($GLOBALS['CFG']['premium_tiers'] ?? [
+            'supporter' => ['name' => 'Supporter', 'price_usd' => 5,  'days' => 30,  'chars' => 500000,  'badge' => 'SUPPORTER'],
+            'pro'       => ['name' => 'Pro',       'price_usd' => 10, 'days' => 30,  'chars' => 1000000, 'badge' => 'PRO'],
+            'lifetime'  => ['name' => 'Lifetime',  'price_usd' => 40, 'days' => 0,   'chars' => 1000000, 'badge' => 'LIFETIME'],
+        ]);
+    }
+
+    function tier_rank(string $tier): int
+    {
+        $order = ['supporter' => 1, 'pro' => 2, 'lifetime' => 3];
+        return $order[$tier] ?? 0;
+    }
+
+    // Active tier for a user row (or the logged-in user). Returns '' when not
+    // premium or the plan has lapsed.
+    function premium_tier(?array $u = null): string
+    {
+        if ($u === null) {
+            $u = current_user();
+        }
+        if ($u === null) {
+            return '';
+        }
+        $plan = (string)($u['premium_plan'] ?? '');
+        if ($plan === 'monthly') {
+            $plan = 'supporter'; // legacy plan value
+        }
+        if ($plan === '' || !isset(premium_tiers()[$plan])) {
+            return '';
+        }
+        $expires = (string)($u['premium_expires_at'] ?? '');
+        if ($expires !== '') {
+            $expTs = strtotime($expires . ' UTC');
+            if ($expTs !== false && $expTs < time()) {
+                return '';
+            }
+        }
+        return $plan;
+    }
+
+    function is_premium(): bool
+    {
+        return premium_tier() !== '';
+    }
+
+    // True when the given user row (as fetched by a query that includes
+    // premium_plan/premium_expires_at) currently has an active plan.
+    function user_is_premium(?array $u): bool
+    {
+        return premium_tier($u) !== '';
+    }
+
+    // HTML badge shown next to a premium user's name. Returns '' when not premium.
+    function premium_badge(?array $u = null): string
+    {
+        $tier = premium_tier($u);
+        if ($tier === '') {
+            return '';
+        }
+        $tiers = premium_tiers();
+        $label = (string)($tiers[$tier]['badge'] ?? strtoupper($tier));
+        $cls = 'bg-warning text-dark';
+        if ($tier === 'pro') {
+            $cls = 'bg-info text-dark';
+        } elseif ($tier === 'lifetime') {
+            $cls = 'bg-success';
+        }
+        return ' <span class="badge ' . $cls . '" title="KevBin ' . e($label) . ' — thank you!">&#9733; ' . e($label) . '</span>';
+    }
+
+    // Perk: how many chars a paste may be for the current user.
+    function content_char_limit(): int
+    {
+        $base = (int)($GLOBALS['CFG']['max_content_chars'] ?? 100000);
+        $tier = premium_tier();
+        if ($tier !== '') {
+            $tiers = premium_tiers();
+            $chars = (int)($tiers[$tier]['chars'] ?? 0);
+            if ($chars > 0) {
+                return max($base, $chars);
+            }
+        }
+        return max(1, $base);
+    }
+
+    // Perk: max upload size in bytes for the current user.
+    function upload_byte_limit(): int
+    {
+        $base = (int)($GLOBALS['CFG']['upload_max_mb'] ?? 20);
+        if (is_premium()) {
+            $base *= (int)($GLOBALS['CFG']['premium_upload_mult'] ?? 4);
+        }
+        // Host cap: uploaded bytes are a DB BLOB, the INSERT must fit inside the
+        // host's max_allowed_packet (10 MB here), so never exceed 9 MB.
+        return min($base * 1024 * 1024, 9 * 1024 * 1024);
+    }
+
+    // Perk: higher upload rate allowance for premium users.
+    function upload_rate_limit(): int
+    {
+        $base = (int)($GLOBALS['CFG']['upload_rate_limit'] ?? 10);
+        return is_premium() ? max(1, $base * 3) : $base;
+    }
+
+    // ——— BTC payment auto-verification ———
+    // Payments are claimed by TXID on support.php, then verified against a public
+    // block explorer (mempool.space, fallback blockstream.info) by a throttled
+    // scan that piggybacks on real page loads (free hosts have no cron). Admins
+    // can also verify/override in admin.php. Outbound HTTP works on this host
+    // (Discord/GitHub OAuth already use it).
+
+    function site_option_get(string $key): ?string
+    {
+        try {
+            $stmt = db()->prepare('SELECT value FROM site_options WHERE k = ?');
+            $stmt->execute([$key]);
+            $v = $stmt->fetchColumn();
+            return $v === false ? null : (string)$v;
+        } catch (Throwable $t) {
+            return null;
+        }
+    }
+
+    function site_option_set(string $key, string $value): void
+    {
+        try {
+            db()->prepare('INSERT INTO site_options (k, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)')
+                ->execute([$key, $value]);
+        } catch (Throwable $t) {
+            // best-effort (table missing on first run before schema_ensure)
+        }
+    }
+
+    function btc_http_get(string $url, int $timeout = 12): string
+    {
+        $out = '';
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => $timeout,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_USERAGENT => 'kevbin/1.0',
+                CURLOPT_SSL_VERIFYPEER => false,
+            ]);
+            $out = (string)curl_exec($ch);
+            curl_close($ch);
+        } else {
+            $ctx = stream_context_create([
+                'http' => ['method' => 'GET', 'header' => "User-Agent: kevbin\r\n", 'timeout' => $timeout, 'ignore_errors' => true],
+                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+            ]);
+            $out = (string)@file_get_contents($url, false, $ctx);
+        }
+        return $out;
+    }
+
+    function btc_price_usd(): float
+    {
+        $price = 0.0;
+        $j = json_decode(btc_http_get('https://mempool.space/api/v1/prices'), true);
+        if (is_array($j) && !empty($j['USD'])) {
+            $price = (float)$j['USD'];
+        }
+        if ($price <= 0) {
+            $j2 = json_decode(btc_http_get('https://blockstream.info/api/price'), true);
+            if (is_array($j2) && !empty($j2['USD'])) {
+                $price = (float)$j2['USD'];
+            }
+        }
+        if ($price <= 0) {
+            $price = (float)(site_option_get('btc_price') ?? 60000);
+        }
+        if ($price >= 1000) {
+            site_option_set('btc_price', (string)$price);
+        }
+        return $price;
+    }
+
+    // Minimum sats a verified payment must deliver to our wallet for a tier.
+    function btc_min_sats(string $tier): int
+    {
+        $tiers = premium_tiers();
+        $usd = (int)($tiers[$tier]['price_usd'] ?? 5);
+        $price = btc_price_usd();
+        if ($price <= 0) {
+            $price = 60000;
+        }
+        return max(1, (int)ceil($usd / $price * 1e8));
+    }
+
+    // Look up a tx on the public explorer and return how many sats it sent to
+    // our wallet (0 = nothing to us). null = could not reach any explorer.
+    function btc_fetch_tx(string $txid): ?array
+    {
+        $addr = (string)($GLOBALS['CFG']['bitcoin_address'] ?? '');
+        if ($addr === '' || !preg_match('/^[a-f0-9]{64}$/i', $txid)) {
+            return null;
+        }
+        foreach (['https://mempool.space/api/tx/' . $txid, 'https://blockstream.info/api/tx/' . $txid] as $u) {
+            $j = json_decode(btc_http_get($u), true);
+            if (!is_array($j) || (string)($j['txid'] ?? '') !== $txid) {
+                continue;
+            }
+            $received = 0;
+            foreach ((array)($j['vout'] ?? []) as $vo) {
+                if (isset($vo['scriptpubkey_address']) && strtolower((string)$vo['scriptpubkey_address']) === strtolower($addr)) {
+                    $received += (int)($vo['value'] ?? 0);
+                }
+            }
+            return [
+                'confirmed' => !empty($j['status']['confirmed']),
+                'received_sats' => $received,
+            ];
+        }
+        return null;
+    }
+
+    // Set (or upgrade) a user's premium tier. $days <= 0 means lifetime.
+    // Monthly renewals extend from the later of now / current expiry.
+    function grant_premium(string $username, string $tier, ?int $days): void
+    {
+        try {
+            $pdo = db();
+            $stmt = $pdo->prepare('SELECT id, premium_plan, premium_expires_at FROM users WHERE username = ?');
+            $stmt->execute([$username]);
+            $u = $stmt->fetch();
+            if (!$u) {
+                return;
+            }
+            $cur = (string)($u['premium_plan'] ?? '');
+            $final = tier_rank($tier) >= tier_rank($cur) ? $tier : $cur;
+            $expires = null;
+            if ($days === null || $days <= 0 || $final === 'lifetime') {
+                $final = 'lifetime';
+            } else {
+                $curTs = 0;
+                if (!empty($u['premium_expires_at'])) {
+                    $ts = strtotime((string)$u['premium_expires_at'] . ' UTC');
+                    if ($ts !== false) {
+                        $curTs = $ts;
+                    }
+                }
+                $expires = gmdate('Y-m-d H:i:s', max(time(), $curTs) + $days * 86400);
+            }
+            $pdo->prepare('UPDATE users SET premium_plan = ?, premium_expires_at = ? WHERE username = ?')
+                ->execute([$final, $expires, $username]);
+            log_activity('premium_grant', $username . ' ' . $final . ($expires !== null ? ' until ' . $expires : ' lifetime'));
+        } catch (Throwable $t) {
+            error_log('[grant_premium] ' . $t->getMessage());
+        }
+    }
+
+    // Record a user's claim of a TXID for a tier and try to verify it right away.
+    // Returns ['ok'=>bool, 'msg'=>string, 'verified'=>bool].
+    function claim_btc_payment(int $userId, string $username, string $txid, string $tier): array
+    {
+        $txid = strtolower(trim($txid));
+        if (!preg_match('/^[a-f0-9]{64}$/', $txid)) {
+            return ['ok' => false, 'msg' => 'That does not look like a valid Bitcoin transaction ID (64 hex characters).', 'verified' => false];
+        }
+        $tiers = premium_tiers();
+        if (!isset($tiers[$tier])) {
+            return ['ok' => false, 'msg' => 'Unknown plan.', 'verified' => false];
+        }
+        $pdo = db();
+        $stmt = $pdo->prepare('SELECT id, username, status FROM premium_payments WHERE txid = ?');
+        $stmt->execute([$txid]);
+        $existing = $stmt->fetch();
+        if ($existing && ($existing['status'] === 'verified' || $existing['status'] === 'rejected')) {
+            return ['ok' => false, 'msg' => 'That transaction has already been ' . $existing['status'] . '. If this is a mistake, contact an admin.', 'verified' => false];
+        }
+        if ($existing) {
+            $pdo->prepare("UPDATE premium_payments SET user_id = ?, username = ?, plan = ?, status = 'pending' WHERE id = ?")
+                ->execute([$userId, $username, $tier, (int)$existing['id']]);
+            $pid = (int)$existing['id'];
+        } else {
+            $pdo->prepare("INSERT INTO premium_payments (txid, user_id, username, plan, status, created_at) VALUES (?, ?, ?, ?, 'pending', UTC_TIMESTAMP())")
+                ->execute([$txid, $userId, $username, $tier]);
+            $pid = (int)$pdo->lastInsertId();
+        }
+        $tx = btc_fetch_tx($txid);
+        if ($tx === null) {
+            return ['ok' => true, 'msg' => 'Claim recorded. It will be verified automatically within a few minutes (or by an admin).', 'verified' => false];
+        }
+        $pdo->prepare('UPDATE premium_payments SET amount_sats = ? WHERE id = ?')->execute([$tx['received_sats'], $pid]);
+        if (!$tx['confirmed']) {
+            return ['ok' => true, 'msg' => 'That transaction exists but is not confirmed yet — it will be verified automatically once confirmed.', 'verified' => false];
+        }
+        $minSats = btc_min_sats($tier);
+        if ($tx['received_sats'] < $minSats) {
+            $pdo->prepare("UPDATE premium_payments SET status = 'rejected' WHERE id = ?")->execute([$pid]);
+            return ['ok' => false, 'msg' => 'Payment not recognized: that transaction does not send enough to our wallet (need at least ' . number_format($minSats) . ' sats).', 'verified' => false];
+        }
+        $days = (int)($tiers[$tier]['days'] ?? 30);
+        $pdo->prepare("UPDATE premium_payments SET status = 'verified', verified_at = UTC_TIMESTAMP() WHERE id = ?")->execute([$pid]);
+        grant_premium($username, $tier, $days > 0 ? $days : null);
+        $name = (string)($tiers[$tier]['name'] ?? $tier);
+        return ['ok' => true, 'msg' => 'Payment verified — your ' . $name . ' plan is now active!' . ($days > 0 ? ' (' . $days . ' days).' : ' (lifetime).'), 'verified' => true];
+    }
+
+    // Scan pending claims against the explorer + auto-detect incoming payments.
+    function scan_btc_payments(): array
+    {
+        $stats = ['processed' => 0, 'scanned' => false];
+        try {
+            $pdo = db();
+            $tiers = premium_tiers();
+            $stmt = $pdo->prepare("SELECT id, txid, username, plan FROM premium_payments WHERE status = 'pending'");
+            $stmt->execute();
+            foreach ($stmt->fetchAll() as $row) {
+                $tx = btc_fetch_tx((string)$row['txid']);
+                if ($tx === null) {
+                    continue;
+                }
+                $pdo->prepare('UPDATE premium_payments SET amount_sats = ? WHERE id = ?')->execute([$tx['received_sats'], (int)$row['id']]);
+                if (!$tx['confirmed']) {
+                    continue;
+                }
+                $minSats = btc_min_sats((string)$row['plan']);
+                if ($tx['received_sats'] < $minSats) {
+                    $pdo->prepare("UPDATE premium_payments SET status = 'rejected' WHERE id = ?")->execute([(int)$row['id']]);
+                    continue;
+                }
+                $days = (int)($tiers[$row['plan']]['days'] ?? 30);
+                $pdo->prepare("UPDATE premium_payments SET status = 'verified', verified_at = UTC_TIMESTAMP() WHERE id = ?")->execute([(int)$row['id']]);
+                grant_premium((string)$row['username'], (string)$row['plan'], $days > 0 ? $days : null);
+                $stats['processed']++;
+            }
+            // Auto-detect incoming confirmed payments to the wallet so later
+            // claims verify instantly.
+            $addr = (string)($GLOBALS['CFG']['bitcoin_address'] ?? '');
+            if ($addr !== '') {
+                foreach (['https://mempool.space/api/address/' . $addr . '/txs', 'https://blockstream.info/api/address/' . $addr . '/txs'] as $u) {
+                    $j = json_decode(btc_http_get($u), true);
+                    if (!is_array($j)) {
+                        continue;
+                    }
+                    $floor = (int)($GLOBALS['CFG']['btc_wallet_floor_sats'] ?? 1000);
+                    foreach ($j as $tx) {
+                        if (!isset($tx['txid'], $tx['status']['confirmed']) || !$tx['status']['confirmed']) {
+                            continue;
+                        }
+                        $received = 0;
+                        foreach ((array)($tx['vout'] ?? []) as $vo) {
+                            if (isset($vo['scriptpubkey_address']) && strtolower((string)$vo['scriptpubkey_address']) === strtolower($addr)) {
+                                $received += (int)($vo['value'] ?? 0);
+                            }
+                        }
+                        if ($received < $floor) {
+                            continue;
+                        }
+                        $chk = $pdo->prepare('SELECT id FROM premium_payments WHERE txid = ?');
+                        $chk->execute([strtolower((string)$tx['txid'])]);
+                        if (!$chk->fetch()) {
+                            $pdo->prepare("INSERT INTO premium_payments (txid, user_id, username, plan, amount_sats, status, created_at) VALUES (?, NULL, '', '', ?, 'detected', UTC_TIMESTAMP())")
+                                ->execute([strtolower((string)$tx['txid']), $received]);
+                        }
+                    }
+                    $stats['scanned'] = true;
+                    break; // first explorer that answered
+                }
+            }
+        } catch (Throwable $t) {
+            error_log('[btc_scan] ' . $t->getMessage());
+        }
+        return $stats;
+    }
+
+    // Throttled auto-scan hook — piggybacks on real page loads (no cron on the
+    // free host). Runs at most once per btc_scan_interval seconds.
+    function maybe_run_btc_scan(): void
+    {
+        if ((string)($GLOBALS['CFG']['bitcoin_address'] ?? '') === '') {
+            return;
+        }
+        $interval = (int)($GLOBALS['CFG']['btc_scan_interval'] ?? 300);
+        $last = (int)(site_option_get('last_btc_scan') ?? 0);
+        if (time() - $last < $interval) {
+            return;
+        }
+        site_option_set('last_btc_scan', (string)time());
+        scan_btc_payments();
     }
 
     function ip_is_banned(): bool
@@ -906,12 +1309,37 @@ if (!defined('APP_INITIALIZED')) {
                 'github_id' => 'VARCHAR(64) NULL',
                 'github_username' => 'VARCHAR(64) NULL',
                 'github_avatar' => 'VARCHAR(255) NULL',
+                // v2.x: Discord OAuth login (id, username, avatar) via Cloudflare bridge.
+                'discord_id' => 'VARCHAR(64) NULL',
+                'discord_username' => 'VARCHAR(64) NULL',
+                'discord_avatar' => 'VARCHAR(255) NULL',
+                // v2.x: Premium / supporter plan ('monthly'|'lifetime'|'') + expiry.
+                'premium_plan' => 'VARCHAR(20) NOT NULL DEFAULT \'\'',
+                'premium_expires_at' => 'DATETIME NULL',
             ];
             foreach ($userCols as $name => $def) {
                 if (!column_exists($pdo, 'users', $name)) {
                     $pdo->exec('ALTER TABLE users ADD COLUMN ' . $name . ' ' . $def);
                 }
             }
+            // v2.x: Premium payments (BTC auto-verification) + tiny key/value store.
+            $pdo->exec('CREATE TABLE IF NOT EXISTS site_options (
+                k VARCHAR(64) PRIMARY KEY,
+                value TEXT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+            $pdo->exec('CREATE TABLE IF NOT EXISTS premium_payments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                txid CHAR(64) NOT NULL,
+                user_id INT NULL,
+                username VARCHAR(50) NOT NULL DEFAULT \'\',
+                plan VARCHAR(20) NOT NULL DEFAULT \'\',
+                amount_sats BIGINT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT \'pending\',
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                verified_at DATETIME NULL,
+                UNIQUE KEY uq_pp_txid (txid),
+                KEY idx_pp_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
             $pasteCols = [
                 'description' => 'VARCHAR(255) NULL',
                 'tags' => 'VARCHAR(255) NULL',
@@ -1061,14 +1489,20 @@ if (!defined('APP_INITIALIZED')) {
                 );
                 log_activity('schema_migrate', 'created wiki_pages/wiki_revisions tables');
             }
-            // User file uploads (files.php) — binary content lives in the DB so no
-            // uploaded file is ever written into (or served from) the web root.
+            // User file uploads (files.php) — files are auto-mirrored to external
+            // hosters, so the DB only ever holds links (mirror_url), never the bytes.
             if (!table_exists($pdo, 'uploads')) {
                 schema_create_uploads($pdo);
                 log_activity('schema_migrate', 'created uploads table');
-            } elseif (!column_exists($pdo, 'uploads', 'file_data')) {
-                $pdo->exec('ALTER TABLE uploads ADD COLUMN file_data LONGBLOB NULL');
-                log_activity('schema_migrate', 'added uploads.file_data');
+            } else {
+                if (!column_exists($pdo, 'uploads', 'file_data')) {
+                    $pdo->exec('ALTER TABLE uploads ADD COLUMN file_data LONGBLOB NULL');
+                    log_activity('schema_migrate', 'added uploads.file_data');
+                }
+                if (!column_exists($pdo, 'uploads', 'mirror_url')) {
+                    $pdo->exec('ALTER TABLE uploads ADD COLUMN mirror_url VARCHAR(500) NULL AFTER file_data');
+                    log_activity('schema_migrate', 'added uploads.mirror_url');
+                }
             }
             // Log of mirror links pushed to external file-hosters (files.php).
             if (!table_exists($pdo, 'file_shares')) {
@@ -1155,6 +1589,7 @@ if (!defined('APP_INITIALIZED')) {
                 mime VARCHAR(120) NOT NULL,
                 size BIGINT UNSIGNED NOT NULL,
                 file_data LONGBLOB NULL,
+                mirror_url VARCHAR(500) NULL,
                 delete_key VARCHAR(32) NULL,
                 downloads INT UNSIGNED NOT NULL DEFAULT 0,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1226,6 +1661,9 @@ if (!defined('APP_INITIALIZED')) {
             github_id VARCHAR(64) NULL,
             github_username VARCHAR(64) NULL,
             github_avatar VARCHAR(255) NULL,
+            discord_id VARCHAR(64) NULL,
+            discord_username VARCHAR(64) NULL,
+            discord_avatar VARCHAR(255) NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
         $pdo->exec('CREATE TABLE IF NOT EXISTS pastes (
@@ -1743,7 +2181,8 @@ if (!defined('APP_INITIALIZED')) {
             </div>';
     }
 
-    // ——— Custom captcha (session-held code, SHA-256 verified, one-shot) ———
+    // ——— Custom captcha removed — the site has no captcha anywhere.
+
     function recovery_salt(): string
     {
         $salt = (string)($GLOBALS['CFG']['recovery_salt'] ?? '');
@@ -1797,37 +2236,7 @@ if (!defined('APP_INITIALIZED')) {
         return $user;
     }
 
-    function captcha_issue(bool $force = false): void
-    {
-        if ($force || !isset($_SESSION['captcha_h']) || !isset($_SESSION['captcha_t'])
-            || time() - (int)$_SESSION['captcha_t'] > 600) {
-            $chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I/L/O/0/1
-            $code = '';
-            $len = strlen($chars) - 1;
-            for ($i = 0; $i < 6; $i++) {
-                $code .= $chars[random_int(0, $len)];
-            }
-            $_SESSION['captcha_code'] = $code;
-            $_SESSION['captcha_h'] = hash('sha256', strtolower($code));
-            $_SESSION['captcha_t'] = time();
-        }
-    }
-
-    function captcha_current(): string
-    {
-        captcha_issue();
-        return (string)($_SESSION['captcha_code'] ?? '');
-    }
-
-    function captcha_ok(string $answer): bool
-    {
-        $stored = (string)($_SESSION['captcha_h'] ?? '');
-        unset($_SESSION['captcha_h'], $_SESSION['captcha_code'], $_SESSION['captcha_t']);
-        if ($stored === '') {
-            return false;
-        }
-        return hash_equals($stored, hash('sha256', strtolower(trim($answer))));
-    }
+    // ——— Custom captcha removed — the site has no captcha anywhere.
 
     function send_security_headers(): void
     {
@@ -1840,8 +2249,13 @@ if (!defined('APP_INITIALIZED')) {
         header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=()');
         header('Cross-Origin-Opener-Policy: same-origin');
         header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self'; connect-src 'self'; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'");
-        if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
-            header('Strict-Transport-Security: max-age=15552000');
+        // The site is always served over HTTPS (also when proxied by Cloudflare),
+        // so HSTS is safe to advertise in production.
+        $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443
+            || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');
+        if ($secure) {
+            header('Strict-Transport-Security: max-age=31536000; includeSubDomains; preload');
         }
     }
 
@@ -1891,6 +2305,43 @@ if (!defined('APP_INITIALIZED')) {
         return implode("\n", $css);
     }
 
+    // Perceivable, indexable SEO helpers for tool pages. Each entry key is the tool
+    // slug (path after /tools/), used to auto-inject unique <title>/description/
+    // keywords + JSON-LD BreadcrumbList on the matching page. Fallback descriptions
+    // are applied to any other /tools/<slug>/ page so nothing ships without a meta.
+    function tool_seo(string $slug): array
+    {
+        $catalog = [
+            'base64-decoder' => ['Base64 Decoder — Encode & Decode Base64 Online', 'Free online Base64 encoder/decoder. Encode any text or binary to Base64 and decode back with a single click. 100% in your browser — nothing is uploaded.'],
+            'json-formatter' => ['JSON Formatter & Validator — Pretty Print Minified JSON', 'Format, validate, minify and fix JSON online. Beautify unreadable JSON with proper indentation and get instant syntax error reports — all in your browser.'],
+            'jwt-decoder' => ['JWT Decoder — Decode JSON Web Tokens Online', 'Decode and inspect JWT header, payload and signature online. Verify HMAC signatures and view expiry claims — a must-have for API debugging and security testing.'],
+            'subnet-calculator' => ['IP Subnet Calculator — CIDR, Network & Host Ranges', 'Calculate network, broadcast, usable host range, masks and CIDR notation for any IPv4 address instantly, with a clear binary breakdown and explanations.'],
+            'cron-parser' => ['Cron Expression Parser & Explainer', 'Turn any cron expression into plain English and compute the next run times. Validate 5- and 6-field cron syntax with a free online cron explainer.'],
+            'hex-dump' => ['Hex Dump — View Data as Hex & ASCII', 'Render any text into a classic hexdump with byte offsets, hex columns and an ASCII column. Great for debugging binary payloads and file headers.'],
+            'uuid-generator' => ['UUID Generator — v4 & v7 Online', 'Generate cryptographically-random UUID v4 and v7 identifiers in bulk. Copy individually or all at once, plus hex tokens and API keys.'],
+            'regex-tester' => ['Regex Tester — Test & Debug Regular Expressions', 'Test PCRE/ECMAScript regular expressions live against your text with match highlighting, group capture details and an in-browser regex builder.'],
+            'color-converter' => ['Color Converter — HEX, RGB, HSL & CMYK', 'Convert colors between HEX, RGB, HSL and CMYK with a live swatch preview and copy buttons. Free online color code converter.'],
+        ];
+        $all = 'Developer, security and research toolkit. ';
+        if (isset($catalog[$slug])) {
+            return ['title' => $catalog[$slug][0], 'description' => $catalog[$slug][1], 'keywords' => $slug . ', online tool, free, kevbin'];
+        }
+        return [
+            'title' => '',
+            'description' => $all . 'Free online developer, security and research tools.',
+            'keywords' => 'dev tools, security tools, online tools, kevbin',
+        ];
+    }
+
+    function tool_slug_from_request(): ?string
+    {
+        $reqPath = strtok((string)($_SERVER['REQUEST_URI'] ?? '/'), '?') ?: '/';
+        if (preg_match('#^/tools/([^/]+)/?$#', $reqPath, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
     function page_header(string $title): void
     {
         send_security_headers();
@@ -1913,9 +2364,30 @@ if (!defined('APP_INITIALIZED')) {
         $base = (string)$cfg['base_url'];
         $desc = (string)($M['description'] ?? ($cfg['meta_description'] ?? 'Paste & share text online. Free, anonymous and super secure.'));
         $keywords = (string)($M['keywords'] ?? '');
+
+        // Auto-inject per-tool SEO meta so every /tools/<slug>/ page is uniquely
+        // indexable, documented and shareable even if the tool file sets no _meta.
+        $toolSlug = tool_slug_from_request();
+        if ($toolSlug !== null) {
+            $toolSeo = tool_seo($toolSlug);
+            if (($M['description'] ?? '') === '' || !isset($M['description'])) {
+                $desc = $toolSeo['description'];
+            }
+            if ($keywords === '') {
+                $keywords = $toolSeo['keywords'];
+            }
+            if (!isset($M['title'])) {
+                $title = $toolSeo['title'] !== '' ? $toolSeo['title'] : $title;
+            }
+        }
+
         $ogTitle = (string)($M['title'] ?? $title);
         $ogType = (string)($M['type'] ?? 'website');
-        $ogUrl = (string)($M['url'] ?? $base);
+        // Canonical/OG URL defaults to the CURRENT page, not the homepage, so every
+        // tool/doc page is separately indexable. Override via $GLOBALS['_meta']['url'].
+        $reqPath = (string)($_SERVER['REQUEST_URI'] ?? '/');
+        $reqPath = strtok($reqPath, '?') ?: '/';
+        $ogUrl = (string)($M['url'] ?? url(ltrim($reqPath, '/')));
         $ogImage = (string)($M['image'] ?? ($cfg['logo_url'] ?? ''));
         $twitterHandle = (string)($cfg['twitter_handle'] ?? '');
         $gVerification = (string)($cfg['google_site_verification'] ?? '');
@@ -1943,6 +2415,53 @@ if (!defined('APP_INITIALIZED')) {
 <meta name="twitter:description" content="<?= e($desc) ?>">
 <?php if ($ogImage !== ''): ?><meta name="twitter:image" content="<?= e($ogImage) ?>"><?php endif; ?>
 <?php if ($twitterHandle !== ''): ?><meta name="twitter:site" content="<?= e($twitterHandle) ?>"><?php endif; ?>
+<script type="application/ld+json">
+<?= json_encode([
+            '@context' => 'https://schema.org',
+            '@graph' => [
+                [
+                    '@type' => 'WebSite',
+                    '@id' => $base . '#website',
+                    'url' => $base,
+                    'name' => $site,
+                    'description' => $desc,
+                    'inLanguage' => 'en',
+                ],
+                [
+                    '@type' => 'Organization',
+                    '@id' => $base . '#organization',
+                    'name' => $site,
+                    'url' => $base,
+                    'logo' => $ogImage !== '' ? $ogImage : ($base . 'assets/logo.png'),
+                ],
+            ],
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>
+</script>
+<?php if ($toolSlug !== null): ?>
+<script type="application/ld+json">
+<?= json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'WebApplication',
+            'name' => html_entity_decode(strip_tags($ogTitle)),
+            'url' => $ogUrl,
+            'description' => $desc,
+            'applicationCategory' => 'DeveloperApplication',
+            'operatingSystem' => 'Any',
+            'offers' => ['@type' => 'Offer', 'price' => '0', 'priceCurrency' => 'USD'],
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>
+</script>
+<script type="application/ld+json">
+<?= json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'BreadcrumbList',
+            'itemListElement' => [
+                ['@type' => 'ListItem', 'position' => 1, 'name' => 'Home', 'item' => $base],
+                ['@type' => 'ListItem', 'position' => 2, 'name' => 'Tools', 'item' => $base . 'tools/'],
+                ['@type' => 'ListItem', 'position' => 3, 'name' => html_entity_decode(strip_tags($ogTitle)), 'item' => $ogUrl],
+            ],
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>
+</script>
+<?php endif; ?>
 <link rel="stylesheet" href="/assets/bootstrap.min.css">
 <style>
     @font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: swap; src: url(/assets/fonts/spacegrotesk-var.woff2) format('woff2'); }
@@ -2103,11 +2622,12 @@ if (!defined('APP_INITIALIZED')) {
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('list.php')) ?>">Browse</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('search.php')) ?>">Search</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('users.php')) ?>">Users</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('short.php')) ?>">Shorten</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('links.php')) ?>">My Links</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= e(url('dashboard.php')) ?>">Dashboard</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('files.php')) ?>">Files</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('tools/')) ?>">Tools</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('wiki.php')) ?>">Wiki</a></li>
+                <li class="nav-item"><a class="nav-link text-warning" href="<?= e(url('support.php')) ?>">Support</a></li>
             </ul>
             <ul class="navbar-nav">
                 <?php $ghRepo = (string)($cfg['github_repo_url'] ?? ''); ?>
@@ -2163,16 +2683,53 @@ if (!defined('APP_INITIALIZED')) {
 
     function page_footer(): void
     {
+        $toolSlug = tool_slug_from_request();
         ?>
 <footer class="container py-4 text-center text-secondary">
-    <small><?= e($GLOBALS['CFG']['site_name']) ?> — education project ·
+    <?php if ($toolSlug !== null): ?>
+    <div class="mb-3">
+        <button type="button" class="btn btn-outline-light btn-sm" id="kb-share-tool">
+            🔗 Share this tool
+        </button>
+        <a class="btn btn-outline-light btn-sm ms-2" href="<?= e(url('tools/')) ?>">All KevBin tools</a>
+    </div>
+    <?php endif; ?>
+    <small>Made with <a class="link-secondary" href="<?= e(url()) ?>">KevBin</a> — education project ·
         <a class="link-secondary" href="<?= e(url('tos.php')) ?>">Terms of Service</a> ·
         <a class="link-secondary" href="<?= e(url('privacy.php')) ?>">Privacy Policy</a> ·
         <a class="link-secondary" href="<?= e(url('legal.php')) ?>">DMCA / Law Enforcement</a> ·
-        <a class="link-secondary" href="<?= e(url('api_docs.php')) ?>">API</a>
+        <a class="link-secondary" href="<?= e(url('discord_tos.php')) ?>">Discord Terms</a> ·
+        <a class="link-secondary" href="<?= e(url('discord_privacy.php')) ?>">Discord Privacy</a> ·
+        <a class="link-secondary" href="<?= e(url('api_docs.php')) ?>">API</a> ·
+        <a class="link-secondary" href="<?= e(url('dashboard.php')) ?>">Dashboard</a> ·
+        <a class="link-secondary" href="<?= e(url('file_analysis.php')) ?>">File Analysis</a> ·
+        <a class="link-secondary" href="<?= e(url('support.php')) ?>">Support</a>
     </small>
 </footer>
 <script src="/assets/bootstrap.bundle.min.js"></script>
+<?php if ($toolSlug !== null): ?>
+<script>
+    // --- Share this tool (clipboard fallback always, WebShare API when available) ---
+    (function () {
+        var btn = document.getElementById('kb-share-tool');
+        if (!btn) return;
+        var shareData = { title: document.title, url: location.href };
+        btn.addEventListener('click', function () {
+            if (navigator.share) {
+                navigator.share(shareData).catch(function () {});
+                return;
+            }
+            var ok = function () { var old = btn.textContent; btn.textContent = '✅ Copied!'; setTimeout(function () { btn.textContent = old; }, 1600); };
+            var fail = function () { window.prompt('Copy this URL:', location.href); };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(location.href).then(ok, fail);
+            } else {
+                fail();
+            }
+        });
+    })();
+</script>
+<?php endif; ?>
 <script>
     // --- Simple console-open blocker (keyboard shortcuts only, non-destructive) ---
     // Blocks the common DevTools shortcuts. Nothing else: no debugger traps,
@@ -2278,6 +2835,10 @@ if (!defined('APP_INITIALIZED')) {
     if (!empty(($GLOBALS['CFG'] ?? [])['auto_migrate'])) {
         schema_ensure();
     }
+
+    // BTC payment auto-scan (throttled, piggybacks on real page loads). Safe to
+    // run even on a fresh install: every helper catches its own failures.
+    maybe_run_btc_scan();
 }
 
 function generate_paste_id(int $length = 8): string

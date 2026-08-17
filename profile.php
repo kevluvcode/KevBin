@@ -14,7 +14,8 @@ $stmt = db()->prepare(
             tagline, pronouns, skills, bg_image,
             occupation, education, languages, hobbies, quote, birthdate, status_msg,
             github, twitch, tiktok, instagram, reddit, snapchat, bluesky, threads, linkedin,
-            bg_mode, bg_fit, bg_color, bg_gradient, bg_veil, bg_blur
+            bg_mode, bg_fit, bg_color, bg_gradient, bg_veil, bg_blur,
+            premium_plan, premium_expires_at
      FROM users WHERE id = ?'
 );
 $stmt->execute([$id]);
@@ -161,7 +162,7 @@ page_header($user['username']);
             <div class="pfp d-flex align-items-center justify-content-center bg-secondary fs-3">?</div>
         <?php endif; ?>
         <div class="flex-grow-1">
-            <h1 class="h4 mb-1" style="<?= e($nameStyle) ?>"><?= e($user['username']) ?><?php if (!empty($user['alias']) && $user['alias'] !== $user['username']): ?> <span class="text-secondary fw-normal fs-6">(<?= e($user['alias']) ?>)</span><?php endif; ?></h1>
+            <h1 class="h4 mb-1" style="<?= e($nameStyle) ?>"><?= e($user['username']) ?><?= premium_badge($user) ?><?php if (!empty($user['alias']) && $user['alias'] !== $user['username']): ?> <span class="text-secondary fw-normal fs-6">(<?= e($user['alias']) ?>)</span><?php endif; ?></h1>
             <?php if (!empty($user['tagline'])): ?><div class="small mb-1" style="color:var(--dim);font-style:italic;">"<?= e($user['tagline']) ?>"</div><?php endif; ?>
             <div class="text-secondary small">
                 <?php if ($user['role'] === 'admin'): ?>
@@ -171,6 +172,7 @@ page_header($user['username']);
                     <span class="badge bg-warning">SUSPENDED</span>
                 <?php endif; ?>
                 joined <?= $user['created_at'] ? e(gmdate('Y-m-d', strtotime($user['created_at'] . ' UTC'))) : '—' ?>
+                · User ID: #<?= (int)$user['id'] ?>
                 <?php if ($user['location']): ?> · <?= e($user['location']) ?><?php endif; ?>
                 · <?= (int)$user['profile_views'] ?> profile views
                 · <?= (int)follower_count($id) ?> followers · <?= (int)following_count($id) ?> following

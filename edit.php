@@ -68,8 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (mb_strlen($newContent) < 1) {
         $error = 'Content cannot be empty.';
-    } elseif (mb_strlen($newContent) > (int)$cfg['max_content_chars']) {
-        $error = 'Content too long (max ' . $cfg['max_content_chars'] . ' chars).';
+    } elseif (mb_strlen($newContent) > content_char_limit()) {
+        $error = 'Content too long (max ' . content_char_limit() . ' chars).';
     } elseif ($isStaff) {
         db()->prepare('UPDATE pastes SET title = ?, description = ?, tags = ?, password_hash = ?, content = ?, paste_color = ? WHERE id = ?')
             ->execute([
