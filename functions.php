@@ -1325,6 +1325,8 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
 
     // Applies any missing schema (votes/comments tables, users.alias/profile_views,
     // pastes.description/tags) — idempotent and safe to run on every page render.
+    // Runs at most once every 30 minutes to avoid slow information_schema queries
+    // on every request.
     function schema_ensure(bool $force = false): void
     {
         static $ran = false;
@@ -1337,6 +1339,13 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
             return;
         }
         try {
+            // Skip if we migrated recently (30 min throttle).
+            if (!$force) {
+                $lastRun = (int)(site_option_get('last_schema_run') ?? 0);
+                if (time() - $lastRun < 1800) {
+                    return;
+                }
+            }
             $pdo = db();
             // Not installed yet — nothing to migrate. Checked first so this is a
             // cheap no-op on the setup page instead of a list of failing ALTERs.
@@ -1859,6 +1868,8 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                     log_activity('schema_migrate', 'seeded community wiki home page');
                 }
             }
+            // Mark migration timestamp so we don't re-run for 30 minutes.
+            site_option_set('last_schema_run', (string)time());
         } catch (Throwable $t) {
             error_log('[schema_ensure] ' . $t->getMessage());
         }
