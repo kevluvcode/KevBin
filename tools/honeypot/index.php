@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(['error' => 'Enter a URL to scan.']);
         exit;
     }
+    $depth = (string)($_POST['depth'] ?? 'full') === 'quick' ? 'quick' : 'full';
 
     if (!preg_match('#^https?://#i', $url)) {
         $url = 'http://' . $url;
@@ -38,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     log_activity('tool_honeypot', $host);
 
-    $result = run_honeypot_scan($url, $host);
+    $result = run_honeypot_scan($url, $host, $depth);
     echo json_encode($result);
     exit;
 }
@@ -71,8 +72,8 @@ $cfg = $GLOBALS['CFG'];
 </style>
 
 <div class="container" style="max-width: 960px;">
-    <h1 class="h4 mb-1 reveal in-view">&#128270; Honeypot Detector</h1>
-    <p class="text-secondary mb-3 reveal in-view">Scans a website for honeypot and bot-trap indicators: hidden form fields, off-screen CSS traps, JS behavioral traps (clickjacking, keylogging, clipboard hijacks, headless fingerprints), cross-origin data exfiltration, scareware/social-engineering landmines, WAF signatures, server fingerprinting, and tracking scripts.</p>
+    <h1 class="h4 mb-1 reveal in-view">&#128270; Honeypot Detector v2</h1>
+    <p class="text-secondary mb-3 reveal in-view">Scans a website for honeypot and bot-trap indicators: hidden form fields, off-screen CSS traps, JS behavioral traps (clickjacking, keylogging, clipboard hijacks, headless fingerprints), cross-origin data exfiltration, scareware/social-engineering landmines, WAF signatures, server fingerprinting, tracking scripts — plus <b>v2 deep checks</b>: JS obfuscation &amp; crypto-miners, cookie flags, dangerous form actions, exfil webhook targets, mixed content, clickjack veils, session-theft scripts, email harvesting, exposed backup files, and linked-page probes.</p>
 
     <div class="card reveal in-view"><div class="card-body">
         <form id="hpForm" class="mb-0">
@@ -86,6 +87,18 @@ $cfg = $GLOBALS['CFG'];
                         <span id="btnLabel">Scan</span>
                         <span id="btnSpin" class="d-none"><span class="spinner-border spinner-border-sm" role="status"></span> Scanning...</span>
                     </button>
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-12">
+                    <label class="form-label small text-secondary mb-1">Scan depth</label>
+                    <div class="btn-group" role="group" aria-label="Scan depth">
+                        <input type="radio" class="btn-check" name="depth" id="depth-quick" value="quick" autocomplete="off">
+                        <label class="btn btn-outline-light btn-sm" for="depth-quick">&#9889; Quick — main page only</label>
+                        <input type="radio" class="btn-check" name="depth" id="depth-full" value="full" autocomplete="off" checked>
+                        <label class="btn btn-outline-light btn-sm" for="depth-full">&#128269; Full — page + linked pages + backup files</label>
+                    </div>
+                    <span class="text-secondary small ms-2" id="depthHelp">Full adds JS-obfuscation tunnels, crypto-miner signatures, cookie flag audit, clickjack veils, session-theft &amp; email-harvest scripts, exfil webhook targets, mixed-content audit, exposed backup probes and up to 4 linked-page rescans.</span>
                 </div>
             </div>
         </form>
@@ -137,6 +150,21 @@ $cfg = $GLOBALS['CFG'];
         </div></div>
 
         <div class="card mb-3 reveal in-view"><div class="card-body">
+            <h2 class="h6 mb-3">&#127850; Cookie Security Audit</h2>
+            <div id="cookiesContent"></div>
+        </div></div>
+
+        <div class="card mb-3 reveal in-view"><div class="card-body">
+            <h2 class="h6 mb-3">&#128421; Backup &amp; Exposed File Probes</h2>
+            <div id="backupContent"></div>
+        </div></div>
+
+        <div class="card mb-3 reveal in-view"><div class="card-body">
+            <h2 class="h6 mb-3">&#128279; Linked-Page Rescans</h2>
+            <div id="linkedContent"></div>
+        </div></div>
+
+        <div class="card mb-3 reveal in-view"><div class="card-body">
             <h2 class="h6 mb-3">&#128375; Honey Paths</h2>
             <div id="honeyPathsContent"></div>
         </div></div>
@@ -175,18 +203,33 @@ $cfg = $GLOBALS['CFG'];
     var progressText = document.getElementById('progressText');
     var progressBar = document.getElementById('progressBar');
 
-    var steps = [
+    var stepsQuick = [
         'Fetching page content...',
         'Checking hidden form fields...',
         'Scanning hidden containers & CSS traps...',
         'Analyzing JS behavioral traps...',
         'Detecting cross-origin data flows...',
+        'Auditing cookies, form actions & headless traps...',
+        'Checking JS obfuscation & crypto-miners...',
+        'Scanning exfil targets, session-theft & email harvest...',
         'Checking server fingerprints & WAF...',
         'Probing robots.txt & honey paths...',
         'Scanning for scareware / spam pages...',
-        'Checking analytics & tracking...',
         'Compiling results...'
     ];
+    var stepsFull = stepsQuick.slice(0, 11).concat([
+        'Probing exposed backup files...',
+        'Rescanning linked pages (up to 4)...',
+        'Compiling results...'
+    ]);
+    function activeDepth() {
+        var el = document.querySelector('[name=depth]:checked');
+        return el ? el.value : 'full';
+    }
+    function updateSteps() {
+        steps = activeDepth() === 'full' ? stepsFull : stepsQuick;
+    }
+    var steps = stepsFull;
 
     var progressTimer = null;
     var progressIdx = 0;
@@ -219,6 +262,7 @@ $cfg = $GLOBALS['CFG'];
         btn.disabled = true;
         btnLabel.classList.add('d-none');
         btnSpin.classList.remove('d-none');
+        updateSteps();
         startProgress();
 
         var fd = new FormData(form);
@@ -292,6 +336,9 @@ $cfg = $GLOBALS['CFG'];
         renderServerFingerprints(d.server_fingerprints || {});
         renderWafDetection(d.waf || {});
         renderAnalytics(d.analytics || {});
+        renderCookies(d.cookie_flags || []);
+        renderBackup(d.backup_files || []);
+        renderLinked(d.linked_pages || []);
         renderRecommendations(d.recommendations || []);
     }
 
@@ -394,6 +441,53 @@ $cfg = $GLOBALS['CFG'];
         el.innerHTML = '<div class="mb-2"><span class="hp-tag warn">&#128200; Tracking Found</span></div>' + tags;
     }
 
+    function renderCookies(flags) {
+        var el = document.getElementById('cookiesContent');
+        if (flags.length === 0) {
+            el.innerHTML = '<div class="text-secondary small">No insecure cookie flags detected (Secure/HttpOnly/SameSite look healthy).</div>';
+            return;
+        }
+        var html = '<div class="table-responsive"><table class="table table-sm table-dark align-middle mb-0"><thead><tr><th>Cookie</th><th>Issue</th><th>Risk</th></tr></thead><tbody>';
+        flags.forEach(function (f) {
+            html += '<tr><td class="small"><code>' + esc(f.name) + '</code></td><td class="small">' + esc(f.issue) + '</td><td><span class="hp-tag ' + f.severity + '">' + (f.severity === 'danger' ? 'Insecure' : 'Suspicious') + '</span></td></tr>';
+        });
+        html += '</tbody></table></div>';
+        el.innerHTML = html;
+    }
+
+    function renderBackup(files) {
+        var el = document.getElementById('backupContent');
+        if (files.length === 0) {
+            el.innerHTML = '<div class="text-secondary small">No exposed backup/database files found (all probes blocked or missing).</div>';
+            return;
+        }
+        var html = '<table class="hp-path-table"><tbody>';
+        files.forEach(function (p) {
+            var cls = p.status >= 400 ? 'safe' : (p.status >= 300 ? 'warn' : 'danger');
+            var lbl = p.status >= 400 ? 'Blocked' : (p.status >= 300 ? 'Redirect' : 'EXPOSED');
+            html += '<tr><td>' + esc(p.path) + '</td><td>' + esc(p.status + ' ' + p.status_text) + '</td><td><span class="hp-tag ' + cls + '">' + lbl + '</span></td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+    }
+
+    function renderLinked(pages) {
+        var el = document.getElementById('linkedContent');
+        if (pages.length === 0) {
+            el.innerHTML = '<div class="text-secondary small">No linked pages rescanned (quick depth, or no internal links found).</div>';
+            return;
+        }
+        var html = '';
+        pages.forEach(function (pg) {
+            html += '<div class="mb-3"><div class="hp-row"><span class="hp-row-label">Path</span><span class="hp-row-value"><code>' + esc(pg.path) + '</code> <span class="hp-tag ' + (pg.traps.length ? 'danger' : 'safe') + '">' + (pg.traps.length ? pg.traps.length + ' finding(s)' : 'clean') + '</span></span></div>';
+            pg.traps.forEach(function (t) {
+                html += '<div class="hp-trap"><span>' + esc(t.group + ': ' + t.label) + '</span><span class="hp-tag ' + t.severity + '">' + (t.severity === 'danger' ? 'Trap' : 'Suspicious') + '</span></div>';
+            });
+            html += '</div>';
+        });
+        el.innerHTML = html;
+    }
+
     function renderRecommendations(recs) {
         var el = document.getElementById('recommendationsContent');
         if (recs.length === 0) {
@@ -413,16 +507,18 @@ $cfg = $GLOBALS['CFG'];
 <?php page_footer(); ?>
 
 <?php
-function run_honeypot_scan(string $url, string $host): array {
+function run_honeypot_scan(string $url, string $host, string $depth = 'full'): array {
     $parsed = parse_url($url);
     $base = $parsed['scheme'] . '://' . $parsed['host'];
     if (isset($parsed['port'])) {
         $base .= ':' . $parsed['port'];
     }
     $base = rtrim($base, '/');
+    $scheme = $parsed['scheme'] ?? 'http';
 
     $pageHtml = '';
     $pageHeaders = [];
+    $setCookies = [];
     $responseCode = 0;
 
     $ch = curl_init($base . '/');
@@ -435,10 +531,13 @@ function run_honeypot_scan(string $url, string $host): array {
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        CURLOPT_HEADERFUNCTION => function ($curl, $header) use (&$pageHeaders) {
+        CURLOPT_HEADERFUNCTION => function ($curl, $header) use (&$pageHeaders, &$setCookies) {
             $parts = explode(':', $header, 2);
             if (count($parts) === 2) {
                 $pageHeaders[strtolower(trim($parts[0]))] = trim($parts[1]);
+                if (strtolower(trim($parts[0])) === 'set-cookie') {
+                    $setCookies[] = trim($parts[1]);
+                }
             }
             return strlen($header);
         },
@@ -631,6 +730,148 @@ function run_honeypot_scan(string $url, string $host): array {
 
     $score = max(0, min(100, $score));
 
+    // ————— v2 deep checks —————
+    $cookieFlags = [];
+    $backupFiles = [];
+    $linkedPages = [];
+    $extraChecks = 9; // single-page v2 checks, always run
+
+    // JS obfuscation tunnels (eval packs, char-code encoders, base64→eval chains)
+    $obfData = check_js_obfuscation($pageHtml);
+    foreach ($obfData['patterns'] as $p) {
+        $advancedTraps[] = array_merge($p, ['group' => 'JS Obfuscation']);
+        $indicatorsTotal++;
+        $score -= severity_score($p['severity']);
+    }
+    $checksPassed++;
+
+    // Crypto-mining scripts
+    $minerData = check_crypto_miners($pageHtml);
+    foreach ($minerData['patterns'] as $p) {
+        $advancedTraps[] = array_merge($p, ['group' => 'Crypto Miners']);
+        $indicatorsTotal++;
+        $score -= severity_score($p['severity']);
+    }
+    $checksPassed++;
+    if ($minerData['found']) {
+        $recommendations[] = ['type' => 'danger', 'message' => 'Cryptocurrency mining code detected. This site is likely hijacking visitors\' CPU.'];
+    }
+
+    // Dangerous form actions (javascript:, data:, vbscript:)
+    $formActionData = check_dangerous_form_actions($pageHtml);
+    foreach ($formActionData['patterns'] as $p) {
+        $advancedTraps[] = array_merge($p, ['group' => 'Dangerous Form Actions']);
+        $indicatorsTotal++;
+        $score -= severity_score($p['severity']);
+    }
+    $checksPassed++;
+    if ($formActionData['javascript'] > 0) {
+        $recommendations[] = ['type' => 'danger', 'message' => 'Form uses a javascript: action. Submit handlers hidden in code can silently intercept or rewrite data.'];
+    }
+
+    // Exfiltration webhook targets (Discord/Telegram/Pastebin/raw github…)
+    $exfilData = check_exfil_targets($pageHtml);
+    foreach ($exfilData['patterns'] as $p) {
+        $advancedTraps[] = array_merge($p, ['group' => 'Exfil Targets']);
+        $indicatorsTotal++;
+        $score -= severity_score($p['severity']);
+    }
+    $checksPassed++;
+    if ($exfilData['found']) {
+        $recommendations[] = ['type' => 'danger', 'message' => 'Page communicates with known exfiltration endpoints (webhook/paste services). Credentials or form data may leak to third parties.'];
+    }
+
+    // Mixed content on HTTPS pages
+    $mixedData = check_mixed_content($pageHtml, $scheme);
+    foreach ($mixedData['links'] as $l) {
+        $advancedTraps[] = ['label' => 'Mixed content: ' . mb_substr($l, 0, 90), 'severity' => 'warn', 'group' => 'Mixed Content'];
+        $indicatorsTotal++;
+        $score -= 2;
+    }
+    $checksPassed++;
+
+    // Clickjack veils / overlay shields / click-transfer divs
+    $veilData = check_clickjack_veils($pageHtml);
+    foreach ($veilData['patterns'] as $p) {
+        $advancedTraps[] = array_merge($p, ['group' => 'Clickjack Veils']);
+        $indicatorsTotal++;
+        $score -= severity_score($p['severity']);
+    }
+    $checksPassed++;
+    if ($veilData['found']) {
+        $recommendations[] = ['type' => 'danger', 'message' => 'Clickjacking veil detected (transparent overlay/shield redirecting clicks). Classic “you won!” scam pattern — and a sign the page may impersonate trusted UI.'];
+    }
+
+    // Session-theft scripts (cookie/localStorage token reads)
+    $sessionData = check_session_theft($pageHtml);
+    foreach ($sessionData['patterns'] as $p) {
+        $advancedTraps[] = array_merge($p, ['group' => 'Session Theft']);
+        $indicatorsTotal++;
+        $score -= severity_score($p['severity']);
+    }
+    $checksPassed++;
+    if ($sessionData['found']) {
+        $recommendations[] = ['type' => 'warn', 'message' => 'Scripts read cookies or localStorage auth tokens. Legit sites do this for sessions, but combined with exfil targets this becomes credential theft.'];
+    }
+
+    // Email harvesting
+    $harvestData = check_email_harvest($pageHtml);
+    foreach ($harvestData['patterns'] as $p) {
+        $advancedTraps[] = array_merge($p, ['group' => 'Email Harvest']);
+        $indicatorsTotal++;
+        $score -= severity_score($p['severity']);
+    }
+    $checksPassed++;
+    if ($harvestData['found']) {
+        $recommendations[] = ['type' => 'danger', 'message' => 'Page contains scripts that scrape email addresses — a phishing/harvest operation signature.'];
+    }
+
+    // Cookie flag audit (Secure/HttpOnly/SameSite)
+    $cookieData = check_cookie_flags($setCookies, $scheme);
+    $cookieFlags = $cookieData['flags'];
+    foreach ($cookieFlags as $f) {
+        $indicatorsTotal++;
+        $score -= $f['severity'] === 'danger' ? 3 : 2;
+    }
+    $checksPassed++;
+    if (count($cookieFlags) > 0) {
+        $recommendations[] = ['type' => 'warn', 'message' => count($cookieFlags) . ' cookie(s) missing Secure/HttpOnly/SameSite flags. Session tokens could be stolen over HTTP or via XSS.'];
+    }
+
+    if ($depth === 'full') {
+        $extraChecks += 2;
+
+        // Exposed backup / database / config files
+        $backupData = check_backup_files($base);
+        $backupFiles = $backupData['paths'];
+        $exposedBackups = array_filter($backupFiles, function ($p) { return $p['status'] >= 200 && $p['status'] < 300; });
+        if (count($exposedBackups) > 0) {
+            $score -= min(18, count($exposedBackups) * 6);
+            $indicatorsTotal += count($exposedBackups);
+            $recommendations[] = ['type' => 'danger', 'message' => count($exposedBackups) . ' backup/database/config file(s) publicly accessible. Anyone can download them.'];
+        }
+        if (count($backupData['found_paths']) > 0) {
+            $indicatorsTotal += count($backupData['found_paths']);
+        }
+        $checksPassed++;
+
+        // Linked-page rescans (up to 4 same-host paths)
+        $linkedData = check_linked_pages($pageHtml, $base, $host);
+        $linkedPages = $linkedData['pages'];
+        foreach ($linkedPages as $pg) {
+            foreach ($pg['traps'] as $t) {
+                $indicatorsTotal++;
+                $score -= severity_score($t['severity']);
+            }
+            if (count($pg['traps']) > 0) {
+                $recommendations[] = ['type' => 'warn', 'message' => 'Linked page "' . $pg['path'] . '" carries ' . count($pg['traps']) . ' trap finding(s) — scan result aggregates them below.'];
+            }
+        }
+        $checksPassed++;
+    }
+
+    $checksTotal = 17 + $extraChecks;
+
     if ($score >= 80 && $indicatorsTotal === 0) {
         $recommendations[] = ['type' => 'safe', 'message' => 'No significant honeypot indicators detected. The site appears clean.'];
     }
@@ -642,6 +883,7 @@ function run_honeypot_scan(string $url, string $host): array {
         'checks_passed' => $checksPassed,
         'checks_total' => $checksTotal,
         'indicators_total' => $indicatorsTotal,
+        'depth' => $depth,
         'final_url' => $finalUrl ?? '',
         'response_code' => $responseCode,
         'load_time' => round($totalTime, 2),
@@ -651,6 +893,9 @@ function run_honeypot_scan(string $url, string $host): array {
         'server_fingerprints' => $serverFp,
         'waf' => $waf,
         'analytics' => $analytics,
+        'cookie_flags' => $cookieFlags,
+        'backup_files' => $backupFiles,
+        'linked_pages' => $linkedPages,
         'recommendations' => $recommendations,
     ];
 }
@@ -1346,4 +1591,369 @@ function check_analytics(string $html): array {
 
     $result['found'] = count($result['scripts']) > 0;
     return $result;
+}
+
+// ————— v2: shared tiny HTTP fetch (probes + linked pages) —————
+function hp_fetch(string $url, int $timeout = 8): array {
+    $headers = [];
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 4,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        CURLOPT_HEADERFUNCTION => function ($curl, $header) use (&$headers) {
+            $parts = explode(':', $header, 2);
+            if (count($parts) === 2) {
+                $headers[strtolower(trim($parts[0]))] = trim($parts[1]);
+            }
+            return strlen($header);
+        },
+    ]);
+    $html = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $effective = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    curl_close($ch);
+    return ['html' => (string)$html, 'code' => $code, 'headers' => $headers, 'effective' => $effective];
+}
+
+// ————— v2: JS obfuscation tunnels —————
+function check_js_obfuscation(string $html): array {
+    $patterns = [];
+    if (empty($html)) {
+        return ['patterns' => []];
+    }
+    $scriptBlocks = [];
+    preg_match_all('/<script\b[^>]*>(.*?)<\/script>/is', $html, $m);
+    foreach ($m[1] as $code) {
+        if (trim($code) === '') continue;
+        $len = strlen($code);
+        if ($len > 20000) {
+            $patterns[] = ['label' => 'Huge inline script (' . number_format($len) . ' bytes) — typical obfuscation vehicle', 'severity' => 'warn'];
+        }
+        if (preg_match('/\beval\s*\(/i', $code)) {
+            $patterns[] = ['label' => 'eval() used — dynamic code execution', 'severity' => 'warn'];
+        }
+        if (preg_match('/\bnew\s+Function\s*\(/i', $code)) {
+            $patterns[] = ['label' => 'new Function() — runtime code construction', 'severity' => 'warn'];
+        }
+        if (preg_match('/Function\s*\(\s*["\']return/i', $code)) {
+            $patterns[] = ['label' => 'Function("return …") — string-packed decoder pattern', 'severity' => 'danger'];
+        }
+        if (preg_match('/String\.fromCharCode\s*\([^)]{80,}/i', $code)) {
+            $patterns[] = ['label' => 'String.fromCharCode(…long payload…) — char-code encoding', 'severity' => 'danger'];
+        }
+        if (preg_match('/atob\s*\([^)]*\)[\s\S]{0,80}?\beval\s*\(/i', $code)) {
+            $patterns[] = ['label' => 'atob() → eval() chain — base64-decode then execute', 'severity' => 'danger'];
+        }
+        if (preg_match('/\\x[0-9a-f]{2}\\x[0-9a-f]{2}/i', $code)) {
+            $patterns[] = ['label' => 'Hex-escaped string runs (\\xNN\\xNN…) — encoded payload', 'severity' => 'warn'];
+        }
+        if (preg_match('/\\\\[0-7]{3}/', $code)) {
+            $patterns[] = ['label' => 'Octal-escaped strings (\\NNN) — classic packer', 'severity' => 'warn'];
+        }
+        if (preg_match('/this\.constructor\.constructor/i', $code)) {
+            $patterns[] = ['label' => 'constructor.constructor trick — sandbox escape pattern', 'severity' => 'danger'];
+        }
+    }
+    return ['patterns' => array_slice($patterns, 0, 10)];
+}
+
+// ————— v2: crypto-miner signatures —————
+function check_crypto_miners(string $html): array {
+    $patterns = [];
+    $found = false;
+    if (empty($html)) {
+        return ['found' => false, 'patterns' => []];
+    }
+    $low = strtolower($html);
+    $sigs = [
+        'coinhive' => 'Coinhive / CoinIMP miner loader',
+        'coinimp' => 'Coinhive / CoinIMP miner loader',
+        'cryptoloot' => 'CryptoLoot miner script',
+        'cryptonight' => 'CryptoNight hash-loop (WASM miner kernel)',
+        'webminepool' => 'WebMinePool miner',
+        'authedmine' => 'AuthedMine miner loader',
+        'minexmr' => 'MineXMR pool hookup',
+        'seismichash' => 'Seismic hash / WASM miner',
+        'xmrig' => 'XMRig miner hookup',
+        'miner.js' => 'Generic miner bundle',
+        'loadcryptonightwasm' => 'WASM miner kernel loader',
+        'coin-hive' => 'CoinHive classis loader',
+    ];
+    foreach ($sigs as $sig => $name) {
+        if (strpos($low, $sig) !== false) {
+            $found = true;
+            $patterns[] = ['label' => $name . ' (signature "' . $sig . '")', 'severity' => 'danger'];
+        }
+    }
+    return ['found' => $found, 'patterns' => array_slice($patterns, 0, 8)];
+}
+
+// ————— v2: dangerous form actions —————
+function check_dangerous_form_actions(string $html): array {
+    $patterns = [];
+    $javascript = 0;
+    if (empty($html)) {
+        return ['javascript' => 0, 'patterns' => []];
+    }
+    if (preg_match_all('/<form\b[^>]*action=["\']([^"\']*)["\']/i', $html, $m)) {
+        foreach ($m[1] as $action) {
+            $a = strtolower(trim($action));
+            if (strpos($a, 'javascript:') === 0) {
+                $javascript++;
+                $patterns[] = ['label' => 'Form action="javascript:…" — hides submit logic in JS', 'severity' => 'danger'];
+            } elseif (strpos($a, 'data:') === 0) {
+                $patterns[] = ['label' => 'Form action="data:…" — submits straight into a data URI', 'severity' => 'danger'];
+            } elseif (strpos($a, 'vbscript:') === 0 || strpos($a, 'file:') === 0) {
+                $patterns[] = ['label' => 'Form action="' . esc_attr_lite($a) . '" — non-HTTP transport', 'severity' => 'danger'];
+            } elseif (strpos($a, 'mailto:') === 0) {
+                $patterns[] = ['label' => 'Form action="mailto:…" — leaks submissions by e-mail', 'severity' => 'warn'];
+            }
+        }
+    }
+    return ['javascript' => $javascript, 'patterns' => array_slice($patterns, 0, 8)];
+}
+
+function esc_attr_lite(string $s): string {
+    return mb_substr(htmlspecialchars($s, ENT_QUOTES, 'UTF-8'), 0, 60);
+}
+
+// ————— v2: exfiltration webhook targets —————
+function check_exfil_targets(string $html): array {
+    $found = false;
+    $patterns = [];
+    if (empty($html)) {
+        return ['found' => $found, 'patterns' => []];
+    }
+    $rules = [
+        'discordapp.com/api/webhooks|discord.com/api/webhooks' => ['Discord webhook endpoint — data exfil channel', 'danger'],
+        'api.telegram.org/bot' => ['Telegram Bot API — exfil channel', 'danger'],
+        'pastebin.com/raw|pastebin.com/api' => ['Pastebin (raw paste) — data drop', 'warn'],
+        'raw.githubusercontent.com' => ['raw.githubusercontent.com — remote script fetch, often abused for payloads', 'warn'],
+        'webhook.site|requestbin.com|pipedream.net' => ['Webhook/request-bin service — classic exfil collector', 'danger'],
+        'dpaste.org|rentry.co|catbox.moe|litterbox.catbox.moe' => ['Anonymous paste/upload host — data drop', 'warn'],
+        '(?:fetch|XMLHttpRequest|axios|sendBeacon)\s*\(\s*["\']https?://' => ['Fetch/XHR call to an absolute external URL (check below for host)', 'warn'],
+    ];
+    foreach ($rules as $pattern => $info) {
+        if (preg_match('#' . $pattern . '#i', $html, $m)) {
+            $found = true;
+            $patterns[] = ['label' => $info[0] . (isset($m[0]) ? ' — "' . mb_substr($m[0], 0, 60) . '"' : ''), 'severity' => $info[1]];
+        }
+    }
+    return ['found' => $found, 'patterns' => array_slice($patterns, 0, 8)];
+}
+
+// ————— v2: mixed content on HTTPS pages —————
+function check_mixed_content(string $html, string $scheme): array {
+    $links = [];
+    if ($scheme !== 'https' || empty($html)) {
+        return ['links' => []];
+    }
+    if (preg_match_all('/(?:src|href|action)=["\']http:\/\/([^"\']*)["\']/i', $html, $m)) {
+        foreach ($m[1] as $hostPart) {
+            if (count($links) < 6) {
+                $links[] = 'http://' . $hostPart;
+            }
+        }
+    }
+    return ['links' => $links];
+}
+
+// ————— v2: clickjack veils & click-transfer shields —————
+function check_clickjack_veils(string $html): array {
+    $patterns = [];
+    $found = false;
+    if (empty($html)) {
+        return ['found' => $found, 'patterns' => []];
+    }
+    if (preg_match('/position\s*:\s*(?:fixed|absolute)\s*;\s*(?:top|left|inset)[^;]*;\s*z-index\s*:\s*[0-9]{3,}/i', $html)) {
+        $found = true;
+        $patterns[] = ['label' => 'High z-index positioned overlay (z-index ≥ 100) — clickjack veil candidate', 'severity' => 'danger'];
+    }
+    if (preg_match('/position\s*:\s*(?:fixed|absolute)\s*[^;]*;\s*(?:width|height)\s*:\s*100%/i', $html) && preg_match('/pointer-events\s*:\s*none/i', $html)) {
+        $found = true;
+        $patterns[] = ['label' => 'Full-size invisible layer (pointer-events:none) parked over content — classic “click shield”', 'severity' => 'danger'];
+    }
+    $clickShield = preg_match_all('/getElementById\s*\(\s*["\'][^"\']+["\']\s*\)\.click\s*\(/i', $html, $cm);
+    if ($clickShield > 0) {
+        $found = true;
+        $patterns[] = ['label' => $clickShield . ' click-transfer instruction(s) (el.click()) — decoy button forwards clicks to hidden targets', 'severity' => 'warn'];
+    }
+    if (preg_match('/<iframe\b[^>]*(?:opacity\s*:\s*0|position\s*:\s*absolute)[^>]*>/i', $html)) {
+        $found = true;
+        $patterns[] = ['label' => 'Invisible/absolute iframe — clickjacking frame or invisible ad layer', 'severity' => 'danger'];
+    }
+    return ['found' => $found, 'patterns' => $patterns];
+}
+
+// ————— v2: session-theft script fingerprints —————
+function check_session_theft(string $html): array {
+    $patterns = [];
+    $found = false;
+    if (empty($html)) {
+        return ['found' => $found, 'patterns' => []];
+    }
+    if (preg_match('/document\.cookie\s*\+=/i', $html)) {
+        $found = true;
+        $patterns[] = ['label' => 'document.cookie += … — writes cookies from script (session fixation candidate)', 'severity' => 'warn'];
+    }
+    if (preg_match('/localStorage\.(?:getItem|setItem|removeItem)\s*\(\s*["\'](?:token|session|auth|key|secret|jwt)/i', $html)) {
+        $found = true;
+        $patterns[] = ['label' => 'localStorage auth-token access (token/session/auth keys)', 'severity' => 'warn'];
+    }
+    if (preg_match('/navigator\.credentials/i', $html)) {
+        $found = true;
+        $patterns[] = ['label' => 'navigator.credentials API — credential manager touchpoints', 'severity' => 'warn'];
+    }
+    if (preg_match('/sessionStorage\.[a-z]+\[\s*["\'](?:token|session|auth)/i', $html)) {
+        $found = true;
+        $patterns[] = ['label' => 'sessionStorage token access — session-exfil candidate', 'severity' => 'warn'];
+    }
+    return ['found' => $found, 'patterns' => $patterns];
+}
+
+// ————— v2: e-mail harvesting —————
+function check_email_harvest(string $html): array {
+    $patterns = [];
+    $found = false;
+    if (empty($html)) {
+        return ['found' => $found, 'patterns' => []];
+    }
+    $scripts = [];
+    preg_match_all('/<script\b[^>]*>(.*?)<\/script>/is', $html, $m);
+    foreach ($m[1] as $code) {
+        if (preg_match('/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i', $code)) {
+            $scripts[] = mb_substr($code, 0, 80);
+        }
+    }
+    if (count($scripts) > 0) {
+        $found = true;
+        $patterns[] = ['label' => count($scripts) . ' script block(s) matching e-mail regexes — potential address harvesting ("' . $scripts[0] . '…")', 'severity' => 'danger'];
+    }
+    if (preg_match('/mailto:[^"\']*\.replace\s*\(/i', $html)) {
+        $found = true;
+        $patterns[] = ['label' => 'mailto + .replace() — dynamic address reassembly (anti-crawler or harvester trick)', 'severity' => 'warn'];
+    }
+    return ['found' => $found, 'patterns' => $patterns];
+}
+
+// ————— v2: cookie flag audit —————
+function check_cookie_flags(array $setCookies, string $scheme): array {
+    $flags = [];
+    foreach ($setCookies as $raw) {
+        $name = trim(strtok($raw, '='));
+        if ($name === '') continue;
+        if ($scheme === 'https' && !preg_match('/;\s*Secure/i', $raw)) {
+            $flags[] = ['name' => $name, 'issue' => 'Missing Secure flag over HTTPS', 'severity' => 'danger'];
+        }
+        $hasExpiry = preg_match('/;\s*(?:Expires|Max-Age)=/i', $raw);
+        if (!$hasExpiry && !preg_match('/;\s*HttpOnly/i', $raw)) {
+            $flags[] = ['name' => $name, 'issue' => 'Session cookie without HttpOnly (readable by scripts)', 'severity' => 'danger'];
+        }
+        if (preg_match('/;\s*SameSite=None/i', $raw) && !preg_match('/;\s*Secure/i', $raw)) {
+            $flags[] = ['name' => $name, 'issue' => 'SameSite=None without Secure — rejected by modern browsers', 'severity' => 'warn'];
+        }
+    }
+    return ['flags' => array_slice($flags, 0, 8)];
+}
+
+// ————— v2: exposed backup / database / config files (full depth) —————
+function check_backup_files(string $base): array {
+    $paths = [];
+    $foundPaths = [];
+    $probes = [
+        '/backup.zip', '/backup.tar.gz', '/backup.sql', '/db.sql', '/database.sql', '/dump.sql',
+        '/site.sql', '/data.sql', '/admin.zip', '/wp-config.php.bak', '/wp-config.php.txt',
+        '/config.php.bak', '/config.php.txt', '/.env.bak', '/.env.txt', '/.htaccess.bak',
+        '/credentials.txt', '/passwords.txt', '/id_rsa', '/.ssh/id_rsa',
+    ];
+    foreach ($probes as $probe) {
+        $r = hp_fetch($base . $probe, 5);
+        $code = $r['code'];
+        if ($code === 0) {
+            continue; // unreachable host / timeout — skip probe
+        }
+        $size = isset($r['headers']['content-length']) ? (int)$r['headers']['content-length'] : strlen($r['html']);
+        if ($code >= 200 && $code < 300 && $size > 0 && $code === 200) {
+            $foundPaths[] = $probe;
+        }
+        $paths[] = ['path' => $probe, 'status' => $code, 'status_text' => hp_status_text($code)];
+    }
+    return ['paths' => $paths, 'found_paths' => $foundPaths];
+}
+
+function hp_status_text(int $code): string {
+    $map = [
+        200 => 'OK', 204 => 'No Content', 301 => 'Moved', 302 => 'Found', 304 => 'Not Modified',
+        401 => 'Unauthorized', 403 => 'Forbidden', 404 => 'Not Found', 405 => 'Method Not Allowed',
+        500 => 'Server Error', 502 => 'Bad Gateway', 503 => 'Unavailable',
+    ];
+    return $map[$code] ?? ('HTTP ' . $code);
+}
+
+// ————— v2: linked-page rescans (full depth) —————
+function check_linked_pages(string $html, string $base, string $host): array {
+    $pages = [];
+    if (empty($html)) {
+        return ['pages' => []];
+    }
+    $hrefs = [];
+    preg_match_all('/<a\b[^>]*href=["\']([^"\']*)["\']/i', $html, $m);
+    foreach ($m[1] as $href) {
+        $href = trim($href);
+        if ($href === '' || strpos($href, '#') === 0 || strpos($href, 'javascript:') === 0 || strpos($href, 'mailto:') === 0) continue;
+        $full = $href;
+        if (strpos($href, '//') === 0) {
+            $full = (strpos($base, 'https:') === 0 ? 'https:' : 'http:') . $href;
+        } elseif (strpos($href, 'http') !== 0) {
+            $full = rtrim($base, '/') . '/' . ltrim(strtok($href, '?'), '/');
+        }
+        $h = parse_url($full, PHP_URL_HOST);
+        if ($h !== $host) continue;
+        $path = parse_url($full, PHP_URL_PATH) ?: '/';
+        if (preg_match('/\.(png|jpe?g|gif|webp|svg|css|js|ico|woff2?|ttf|pdf|zip|mp4|webm)$/i', $path)) continue;
+        $hrefs[$path] = $full;
+    }
+    $hrefs = array_slice($hrefs, 0, 4, true);
+    foreach ($hrefs as $path => $fullUrl) {
+        if ($path === '/') continue;
+        $traps = [];
+        try {
+            $r = hp_fetch($fullUrl, 8);
+            $page = $r['html'];
+            if ($r['code'] !== 200 || $page === '') continue;
+            foreach (check_hidden_form_fields($page, $base)['fields'] as $f) {
+                if ($f['suspicious']) {
+                    $traps[] = ['group' => 'Hidden Field', 'label' => 'hidden field "' . $f['name'] . '"', 'severity' => 'warn'];
+                }
+            }
+            foreach (check_css_traps($page)['patterns'] as $p) {
+                $traps[] = ['group' => 'CSS Trap', 'label' => $p['label'], 'severity' => $p['severity']];
+            }
+            foreach (check_cross_origin_forms($page, $host)['forms'] as $f) {
+                $traps[] = ['group' => 'Exfiltration', 'label' => 'form posts to "' . $f['host'] . '"', 'severity' => 'danger'];
+            }
+            foreach (check_dangerous_form_actions($page)['patterns'] as $p) {
+                $traps[] = ['group' => 'Form Action', 'label' => $p['label'], 'severity' => $p['severity']];
+            }
+            foreach (check_js_obfuscation($page)['patterns'] as $p) {
+                $traps[] = ['group' => 'JS Obfuscation', 'label' => $p['label'], 'severity' => $p['severity']];
+            }
+            foreach (check_clickjack_veils($page)['patterns'] as $p) {
+                $traps[] = ['group' => 'Clickjack Veil', 'label' => $p['label'], 'severity' => $p['severity']];
+            }
+            foreach (check_social_engineering($page)['patterns'] as $p) {
+                $traps[] = ['group' => 'Social Engineering', 'label' => $p['label'], 'severity' => $p['severity']];
+            }
+            $pages[] = ['path' => $path, 'traps' => array_slice($traps, 0, 12)];
+        } catch (Throwable $t) {
+            error_log('[honeypot-linked] ' . $t->getMessage());
+        }
+    }
+    return ['pages' => $pages];
 }

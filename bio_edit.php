@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/functions.php';
 
 start_session();
@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($name === '') {
         $error = 'Enter a display name.';
     } elseif (!preg_match('/^[A-Za-z0-9_-]{3,40}$/', $slug)) {
-        $error = 'Custom URL must be 3–40 characters of letters, numbers, dash or underscore.';
+        $error = 'Custom URL must be 3â€“40 characters of letters, numbers, dash or underscore.';
     } elseif ($avatar !== '' && !preg_match('#^https?://#i', $avatar)) {
         $error = 'Avatar must be an http(s) image URL (or leave it blank).';
     }
@@ -223,7 +223,7 @@ page_header('My bios');
 </style>
 <div class="container" style="max-width: 1440px;">
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-        <h1 class="h4 mb-0 reveal in-view">👤 My bios</h1>
+        <h1 class="h4 mb-0 reveal in-view">ðŸ‘¤ My bios</h1>
         <a class="btn btn-primary btn-sm reveal in-view" href="<?= e(url('bio_edit.php')) ?>">+ New bio page</a>
     </div>
 
@@ -232,8 +232,8 @@ page_header('My bios');
             <div class="card-body text-center py-5">
                 <h2 class="h5 mb-3">Make your own guns.lol-style bio page</h2>
                 <p class="text-secondary mb-4">Get a custom URL like <code>/b/yourname</code> with your display name,
-                bio text, avatar, link buttons and full styling — custom background, link colors, button shapes,
-                avatar border and more. Works without an account — you get a private manage link. Or <a class="text-info" href="login.php">log in</a> so your bios live in your account.</p>
+                bio text, avatar, link buttons and full styling â€” custom background, link colors, button shapes,
+                avatar border and more. Works without an account â€” you get a private manage link. Or <a class="text-info" href="login.php">log in</a> so your bios live in your account.</p>
                 <div class="d-flex gap-2 justify-content-center flex-wrap">
                     <a class="btn btn-primary" href="login.php">Log in</a>
                     <a class="btn btn-outline-light" href="register.php">Register</a>
@@ -246,10 +246,10 @@ page_header('My bios');
             <div class="card-body">
                 <h2 class="h6 mb-3"><?= $me !== null ? 'Your bio pages' : 'Bio pages (manage key)' ?></h2>
                 <?php if ($manageKey !== '' && $me === null): ?>
-                    <div class="alert alert-secondary small">Anonymous manage mode — bios created under your private manage key.</div>
+                    <div class="alert alert-secondary small">Anonymous manage mode â€” bios created under your private manage key.</div>
                 <?php endif; ?>
                 <?php if (count($myBios) === 0): ?>
-                    <p class="text-secondary small mb-0">No bio pages yet — create your first one below.</p>
+                    <p class="text-secondary small mb-0">No bio pages yet â€” create your first one below.</p>
                 <?php else: ?>
                     <div class="table-responsive">
                         <table class="table table-dark table-hover align-middle">
@@ -260,7 +260,7 @@ page_header('My bios');
                                     <td class="small"><?= e($b['display_name']) ?></td>
                                     <td><a href="<?= e(url('bio.php?u=' . $b['slug'])) ?>"><code>/b/<?= e($b['slug']) ?></code></a></td>
                                     <td><?= (int)$b['clicks'] ?></td>
-                                    <td class="small"><?= $b['last_click'] ? e(gmdate('Y-m-d H:i', strtotime($b['last_click'] . ' UTC'))) . ' UTC' : '—' ?></td>
+                                    <td class="small"><?= $b['last_click'] ? e(gmdate('Y-m-d H:i', strtotime($b['last_click'] . ' UTC'))) . ' UTC' : 'â€”' ?></td>
                                     <td class="text-end text-nowrap">
                                         <a class="btn btn-sm btn-outline-light" href="<?= e(url('bio_edit.php?slug=' . $b['slug'] . ($manageKey !== '' ? '&m=' . urlencode($manageKey) : ''))) ?>">Edit</a>
                                         <a class="btn btn-sm btn-outline-light" href="<?= e(url('bio.php?u=' . $b['slug'])) ?>" target="_blank" rel="noopener">View</a>
@@ -305,7 +305,7 @@ page_header('My bios');
                                     <span class="input-group-text"><?= e(rtrim((string)$cfg['base_url'], '/')) ?>/b/</span>
                                     <input class="form-control" name="slug" maxlength="40" value="<?= e($form['slug']) ?>" required placeholder="yourname" pattern="[A-Za-z0-9_-]{3,40}">
                                 </div>
-                                <div class="form-text">3–40 characters: letters, numbers, dash, underscore.</div>
+                                <div class="form-text">3â€“40 characters: letters, numbers, dash, underscore.</div>
                             </div>
                         </div>
 
@@ -376,7 +376,7 @@ page_header('My bios');
                             <div class="col-4"><label class="form-label small text-secondary mb-1">Color 1</label><input type="color" class="form-control form-control-color w-100" name="st_bg_grad1" style="height:36px;" value="<?= e($s['bg_grad1']) ?>"></div>
                             <div class="col-4"><label class="form-label small text-secondary mb-1">Color 2</label><input type="color" class="form-control form-control-color w-100" name="st_bg_grad2" style="height:36px;" value="<?= e($s['bg_grad2']) ?>"></div>
                             <div class="col-4">
-                                <label class="form-label small text-secondary mb-1">Angle: <span id="bg-angle-out"><?= (int)$s['bg_angle'] ?>°</span></label>
+                                <label class="form-label small text-secondary mb-1">Angle: <span id="bg-angle-out"><?= (int)$s['bg_angle'] ?>Â°</span></label>
                                 <input type="range" class="form-range" name="st_bg_angle" min="0" max="360" step="5" value="<?= (int)$s['bg_angle'] ?>">
                             </div>
                         </div>
@@ -478,12 +478,31 @@ page_header('My bios');
                                     <div class="row g-2 btn-row">
                                         <div class="col-5"><input class="form-control" name="btn_label[]" maxlength="80" value="<?= e($b['label']) ?>" placeholder="Label"></div>
                                         <div class="col-5"><input class="form-control" name="btn_url[]" maxlength="2048" value="<?= e($b['url']) ?>" placeholder="https://..."></div>
-                                        <div class="col-2"><button type="button" class="btn btn-sm btn-outline-danger w-100 btn-del">✕</button></div>
+                                        <div class="col-2"><button type="button" class="btn btn-sm btn-outline-danger w-100 btn-del">âœ•</button></div>
                                     </div>
                                 <?php endforeach; ?>
                                 <div class="row g-2 btn-row" id="btn-empty"></div>
                             </div>
                             <button type="button" class="btn btn-sm btn-outline-light mt-2" id="btn-add">+ Add button</button>
+                        </div>
+
+                        <div class="bio-opt-head">Role badges</div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" name="st_show_badges" id="st-show-badges"<?= $s['show_badges'] ? ' checked' : '' ?>>
+                                    <label class="form-check-label small" for="st-show-badges">Show site role badges (admin / moderator / premium)</label>
+                                </div>
+                                <div class="form-text small">Shown automatically when this bio belongs to your account. Guests see it too.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small text-secondary mb-1">Badge style</label>
+                                <select class="form-select" name="st_badge_style">
+                                    <option value="glassy"<?= $s['badge_style'] === 'glassy' ? ' selected' : '' ?>>Glassy</option>
+                                    <option value="solid"<?= $s['badge_style'] === 'solid' ? ' selected' : '' ?>>Solid</option>
+                                    <option value="outline"<?= $s['badge_style'] === 'outline' ? ' selected' : '' ?>>Outline</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="bio-opt-head">Layout</div>
@@ -594,7 +613,7 @@ page_header('My bios');
         el.textContent = fmt(input.value);
         input.addEventListener('input', function () { el.textContent = fmt(input.value); });
     }
-    bindOut('bg-angle-out', 'st_bg_angle', function (v) { return v + '°'; });
+    bindOut('bg-angle-out', 'st_bg_angle', function (v) { return v + 'Â°'; });
     bindOut('bg-overlay-out', 'st_bg_overlay', function (v) { return Math.round(parseFloat(v) * 100) + '%'; });
     bindOut('name-size-out', 'st_name_size', function (v) { return parseFloat(v).toFixed(2) + 'rem'; });
     bindOut('bio-size-out', 'st_bio_size', function (v) { return parseFloat(v).toFixed(2) + 'rem'; });
@@ -608,7 +627,7 @@ page_header('My bios');
         d.className = 'row g-2 btn-row';
         d.innerHTML = '<div class="col-5"><input class="form-control" name="btn_label[]" maxlength="80" placeholder="Label" value="' + (label || '') + '"></div>' +
             '<div class="col-5"><input class="form-control" name="btn_url[]" maxlength="2048" placeholder="https://..." value="' + (url || '') + '"></div>' +
-            '<div class="col-2"><button type="button" class="btn btn-sm btn-outline-danger w-100 btn-del">✕</button></div>';
+            '<div class="col-2"><button type="button" class="btn btn-sm btn-outline-danger w-100 btn-del">âœ•</button></div>';
         return d;
     }
     document.getElementById('btn-add').addEventListener('click', function () {

@@ -83,6 +83,14 @@ page_header('Tools');
 
         <div class="col reveal">
             <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">⚙️ Lua Code Generator</h3>
+                <p class="text-secondary small flex-grow-1">Generate clean, ready-to-run Lua scripts from a form: Discord webhook messengers, HTTP clients, file utilities, table helpers and game-loop skeletons — Copy or download in one click.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="lua-generator/">Open</a>
+            </div></div>
+        </div>
+
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
                 <h3 class="h6 mb-2">🎲 UID Generator</h3>
                 <p class="text-secondary small flex-grow-1">UUID v4, hex tokens, base64 secret keys, strong passwords and memorable passphrases.</p>
                 <a class="btn btn-outline-light btn-sm mt-2" href="uid/">Open</a>

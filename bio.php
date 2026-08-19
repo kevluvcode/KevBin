@@ -15,6 +15,50 @@ function bio_initials(string $name): string
     return $init !== '' ? $init : '?';
 }
 
+// Builds the role/premium badge toolbar for the bio owner. Falls back to a
+// sample set in preview mode so the editor can see how the toolbar looks.
+function bio_badges(?array $owner, bool $preview, array $s): array
+{
+    $out = [];
+    if ($preview) {
+        if (!empty($s['show_badges'])) {
+            $out[] = ['label' => 'Admin', 'color' => '#f04747'];
+            $out[] = ['label' => 'Pro', 'color' => '#9e5ce6'];
+        }
+        return $out;
+    }
+    if ($owner === null || empty($s['show_badges'])) {
+        return $out;
+    }
+    if (($owner['role'] ?? '') === 'admin') {
+        $out[] = ['label' => 'Admin', 'color' => '#f04747'];
+    } elseif (($owner['role'] ?? '') === 'moderator') {
+        $out[] = ['label' => 'Moderator', 'color' => '#1abc9c'];
+    }
+    $tier = premium_tier($owner);
+    if ($tier !== '') {
+        $tiers = premium_tiers();
+        $label = (string)($tiers[$tier]['badge'] ?? strtoupper($tier));
+        $color = ['supporter' => '#f1c40f', 'pro' => '#9e5ce6', 'lifetime' => '#e67e22'][$tier] ?? '#f1c40f';
+        $out[] = ['label' => $label, 'color' => $color];
+    }
+    return $out;
+}
+
+function bio_badges_css(string $style, string $align): string
+{
+    $justify = $align === 'left' ? 'flex-start' : 'center';
+    $pill = '.bio-badges { display:flex; flex-wrap:wrap; gap:.45rem; justify-content:' . $justify . '; margin:0 auto 1.1rem; }';
+    switch ($style) {
+        case 'solid':
+            return $pill . '.bio-badge { display:inline-flex; align-items:center; gap:.35rem; padding:.3rem .85rem; border-radius:999px; font-size:.72rem; font-weight:800; letter-spacing:.6px; text-transform:uppercase; color:#fff; }';
+        case 'outline':
+            return $pill . '.bio-badge { display:inline-flex; align-items:center; gap:.35rem; padding:.28rem .85rem; border-radius:999px; font-size:.72rem; font-weight:800; letter-spacing:.6px; text-transform:uppercase; background:transparent; border:2px solid var(--bcolor); color:var(--bcolor); }';
+        default:
+            return $pill . '.bio-badge { display:inline-flex; align-items:center; gap:.35rem; padding:.3rem .85rem; border-radius:999px; font-size:.72rem; font-weight:800; letter-spacing:.6px; text-transform:uppercase; background:var(--bcolor)1a; border:1px solid var(--bcolor)66; color:var(--bcolor); }';
+    }
+}
+
 // Builds the full <style> block from a validated style array.
 function bio_style_css(array $s): string
 {
@@ -81,6 +125,7 @@ body { min-height:100vh; background:{$bg}; color:#eef1f8; font-family:system-ui,
 .foot a { color:rgba(255,255,255,.55); text-decoration:none; }
 .pv-banner { position:fixed; top:0; left:0; right:0; z-index:999; background:#f0b400; color:#0b0e17; font-size:.78rem; font-weight:700; padding:.35rem; text-align:center; }
 CSS;
+    return $css . "\n" . bio_badges_css($s['badge_style'], $s['align']);
 }
 
 if ($preview) {
@@ -96,6 +141,7 @@ if ($preview) {
     if (is_array($sj)) {
         $s = bio_style_clean($sj);
     }
+    $owner = null;
     $buttons = [];
     $bj = json_decode((string)($_POST['buttons'] ?? ''), true);
     if (is_array($bj)) {
@@ -135,6 +181,17 @@ if ($preview) {
         $avatar = '';
     }
     $s = bio_style_from_row($bio);
+    // Owner's site role/premium (badge toolbar). Best-effort: no owner → no badges.
+    $owner = null;
+    if (!empty($bio['user_id'])) {
+        try {
+            $st = db()->prepare('SELECT role, premium_plan, premium_expires_at FROM users WHERE id = ?');
+            $st->execute([(int)$bio['user_id']]);
+            $owner = $st->fetch() ?: null;
+        } catch (Throwable $t) {
+            $owner = null;
+        }
+    }
     $buttons = [];
     if ($bio['buttons'] !== null) {
         $arr = json_decode((string)$bio['buttons'], true);
@@ -155,6 +212,7 @@ $bioText = $bioTextRaw !== ''
     : '';
 $desc = mb_substr(trim(preg_replace('/\s+/', ' ', strip_tags($bioTextRaw))), 0, 160);
 $css = bio_style_css($s);
+$badges = bio_badges($owner, $preview, $s);
 $footerLine = $s['footer_text'] !== '' ? ' · ' . e($s['footer_text']) : '';
 ?>
 <!doctype html>
@@ -181,6 +239,14 @@ $footerLine = $s['footer_text'] !== '' ? ' · ' . e($s['footer_text']) : '';
     <?php endif; ?>
 
     <h1 class="name"><?= e($name) ?></h1>
+
+    <?php if (count($badges) > 0): ?>
+        <div class="bio-badges">
+            <?php foreach ($badges as $b): ?>
+                <span class="bio-badge" style="--bcolor:<?= e($b['color']) ?>"><?= e($b['label']) ?></span>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
 
     <?php if ($bioText !== ''): ?>
         <div class="bio-text"><?= $bioText ?></div>

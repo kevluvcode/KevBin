@@ -16,7 +16,8 @@ A pastebin for the anonymity-minded: dark, fast, "secure & untraceable" — with
 - Analytics trackers: image-pixel beacons (`t/px.php`) and short-link click tracking with a JS fingerprint beacon (`s/stat.php`)
 - Password locks on pastes, staff roles, request queue, IP bans
 - Read-only public API (`api.php`) + CORS-friendly bypass proxy (`api_proxy.php`)
-- 100+ in-browser tools: Lua obfuscator + sandbox, site viewer, page cloner, link expander/bypasser, stealer checker, SHA-256 cracker (6s capped), JWT inspector, minifier, UID generator, hashes, encoders, QR, DNS, WHOIS/RDAP, header inspector, password generator, sens converter, games & more
+- 100+ in-browser tools: Lua obfuscator + sandbox **+ code generator** (webhook messengers, HTTP clients, file utilities, table helpers, game skeletons), **Honeypot Detector v2** (Quick/Full scan depths — hidden-form traps, CSS traps, JS behavioral traps, exfil webhook targets, mixed content, clickjack veils, session-theft & email-harvest scripts, cookie flag audit, crypto-miners, JS obfuscation tunnels, backup-file probes and up to 4 linked-page rescans), site viewer, page cloner, link expander/bypasser, stealer checker, SHA-256 cracker (6s capped), JWT inspector, minifier, UID generator, hashes, encoders, QR, DNS, WHOIS/RDAP, header inspector, password generator, sens converter, games & more
+- **Video chat** (`chat.php`): anonymous rooms (pick a custom display name — no account needed) or join as your account. Peer-to-peer WebRTC full-mesh video/audio (public STUN, mobile-first UI with camera switching, self-view pip, floating controls dock), room text chat, unlisted `?r=` invite links, random-room roller, presence, per-peer mute indicators and user reporting. Signaling + text messages relay through the server over the same origin, so video goes directly peer-to-peer while chat always works.
 - Per-user UI theme: choose your own site background (solid color or gradient), layout width (compact / default / wide) and accent color from Settings
 - Account recovery keys: one-time random key shown at registration (no email needed) with a `forgot.php` reset flow
 - Custom captcha on login / registration / password reset
@@ -30,6 +31,7 @@ A pastebin for the anonymity-minded: dark, fast, "secure & untraceable" — with
   - **Admin accounts are fully exempt**: no anti-DevTools reloads and no rate limits
 - Self-hosted assets: bootstrap and fonts are served locally (zero third-party requests), strict CSP headers
 - File-based throttling for schema migration and BTC scanner (zero DB overhead per request); online counter cached per 15s window
+- Chat safety: guest identities are session-scoped random tokens, signaling is relayed per-recipient and expiring (150s GC), presence GCs after 45s, per-IP rate limits on join/say/signal/report, and room links are unguessable random codes — rooms are unlisted, with no lobby or search
 
 ## Install (InfinityFree)
 

@@ -1768,8 +1768,9 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
             }
             // User file uploads (files.php) — files are auto-mirrored to external
             // hosters, so the DB only ever holds links (mirror_url), never the bytes.
-            if (!table_exists($pdo, 'uploads')) {
-                schema_create_uploads($pdo);
+if (!table_exists($pdo, 'uploads')) {
+schema_create_uploads($pdo);
+        schema_create_chat($pdo);
                 log_activity('schema_migrate', 'created uploads table');
             } else {
                 if (!column_exists($pdo, 'uploads', 'file_data')) {
@@ -1779,6 +1780,32 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                 if (!column_exists($pdo, 'uploads', 'mirror_url')) {
                     $pdo->exec('ALTER TABLE uploads ADD COLUMN mirror_url VARCHAR(500) NULL AFTER file_data');
                     log_activity('schema_migrate', 'added uploads.mirror_url');
+                }
+            }
+            // Video/text chat rooms (chat.php) — signaling relay + room messages.
+            if (!table_exists($pdo, 'chat_messages')) {
+                schema_create_chat($pdo);
+                log_activity('schema_migrate', 'created chat tables');
+            } else {
+                // Guests are identified by string tokens, not user ids — if an
+                // early INT-based version of these tables exists, widen the columns.
+                foreach (['chat_signals:sender_uid', 'chat_signals:to_uid', 'chat_waiters:uid', 'chat_reports:reporter_uid', 'chat_reports:target_uid', 'chat_presence:uid'] as $pair) {
+                    [$t, $c] = explode(':', $pair);
+                    if (table_exists($pdo, $t) && column_exists($pdo, $t, $c)) {
+                        $col = $pdo->query("SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = " . $pdo->quote($t) . " AND COLUMN_NAME = " . $pdo->quote($c))->fetchColumn();
+                        if ($col !== false && strpos((string)$col, 'int') !== false) {
+                            $pdo->exec("ALTER TABLE `{$t}` MODIFY `{$c}` VARCHAR(48) NULL");
+                            log_activity('schema_migrate', "widened {$t}.{$c} to VARCHAR(48)");
+                        }
+                    }
+                }
+                if (!column_exists($pdo, 'chat_messages', 'sender_name')) {
+                    $pdo->exec("ALTER TABLE chat_messages ADD COLUMN sender_name VARCHAR(40) NOT NULL DEFAULT '' AFTER sender_uid");
+                    log_activity('schema_migrate', 'added chat_messages.sender_name');
+                }
+                if (!column_exists($pdo, 'chat_signals', 'to_uid')) {
+                    $pdo->exec("ALTER TABLE chat_signals ADD COLUMN to_uid VARCHAR(48) NOT NULL DEFAULT '' AFTER sender_uid");
+                    log_activity('schema_migrate', 'added chat_signals.to_uid');
                 }
             }
             // Log of mirror links pushed to external file-hosters (files.php).
@@ -1903,6 +1930,65 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                 UNIQUE KEY uq_up_stored (stored_name),
                 KEY idx_up_user (user_id, created_at),
                 KEY idx_up_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+    }
+
+    // Video/text chat rooms (chat.php) — WebRTC signaling relay + room text
+    // messages. Shared by the auto-migrator and fresh-install setup.
+    function schema_create_chat($pdo): void
+    {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS chat_messages (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                room VARCHAR(64) NOT NULL,
+                sender_uid VARCHAR(48) NOT NULL,
+                sender_name VARCHAR(40) NOT NULL,
+                body VARCHAR(1500) NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_chat_room (room, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS chat_signals (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                room VARCHAR(64) NOT NULL,
+                sender_uid VARCHAR(48) NOT NULL,
+                to_uid VARCHAR(48) NOT NULL,
+                kind VARCHAR(10) NOT NULL DEFAULT \'sdp\',
+                payload MEDIUMTEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_chat_sig_room (room, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS chat_waiters (
+                room VARCHAR(64) NOT NULL,
+                uid VARCHAR(48) NOT NULL,
+                last_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (room, uid),
+                KEY idx_waiters_room (room, last_seen)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS chat_reports (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                room VARCHAR(64) NOT NULL,
+                reporter_uid VARCHAR(48) NULL,
+                target_uid VARCHAR(48) NULL,
+                reason VARCHAR(255) NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_chat_report (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS chat_presence (
+                room VARCHAR(64) NOT NULL,
+                uid VARCHAR(48) NOT NULL,
+                name VARCHAR(40) NOT NULL,
+                last_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (room, uid),
+                KEY idx_presence_room (room, last_seen)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
     }
@@ -2730,7 +2816,7 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: SAMEORIGIN');
         header('Referrer-Policy: strict-origin-when-cross-origin');
-        header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=()');
+        header('Permissions-Policy: geolocation=(), microphone=(self), camera=(self), payment=(), usb=()');
         header('Cross-Origin-Opener-Policy: same-origin');
         // A page may tighten/loosen its own CSP for local tools (e.g. the in-browser
         // Lua VM needs 'unsafe-eval' because Fengari compiles Lua to JS functions).
@@ -3180,6 +3266,7 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                         <li><a class="dropdown-item" href="<?= e(url('bio_edit.php')) ?>">Bios</a></li>
                         <li><a class="dropdown-item" href="<?= e(url('dashboard.php')) ?>">Dashboard</a></li>
                         <li><a class="dropdown-item" href="<?= e(url('files.php')) ?>">Files</a></li>
+                        <li><a class="dropdown-item" href="<?= e(url('chat.php')) ?>">Video Chat</a></li>
                     </ul>
                 </li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('tools/')) ?>">Tools</a></li>
@@ -3282,6 +3369,8 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
             'avatar_glow'       => true,
             'card_width'        => 480,
             'align'             => 'center',
+            'show_badges'       => true,
+            'badge_style'       => 'glassy',
             'footer_text'       => '',
         ];
     }
@@ -3316,6 +3405,8 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
         $s['btn_style'] = isset($in['btn_style']) && in_array($in['btn_style'], ['solid', 'outline', 'soft'], true) ? $in['btn_style'] : $s['btn_style'];
         $s['avatar_shape'] = isset($in['avatar_shape']) && in_array($in['avatar_shape'], ['circle', 'rounded', 'square'], true) ? $in['avatar_shape'] : $s['avatar_shape'];
         $s['align'] = isset($in['align']) && in_array($in['align'], ['center', 'left'], true) ? $in['align'] : $s['align'];
+        $s['show_badges'] = !empty($in['show_badges']);
+        $s['badge_style'] = isset($in['badge_style']) && in_array($in['badge_style'], ['glassy', 'solid', 'outline'], true) ? $in['badge_style'] : $s['badge_style'];
         $s['footer_text'] = isset($in['footer_text']) ? mb_substr(strip_tags((string)$in['footer_text']), 0, 200) : '';
         return $s;
     }
@@ -3369,6 +3460,7 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
         <a class="link-secondary" href="<?= e(url('api_docs.php')) ?>">API</a> ·
         <a class="link-secondary" href="<?= e(url('dashboard.php')) ?>">Dashboard</a> ·
         <a class="link-secondary" href="<?= e(url('file_analysis.php')) ?>">File Analysis</a> ·
+        <a class="link-secondary" href="<?= e(url('chat.php')) ?>">Video Chat</a> ·
         <a class="link-secondary" href="<?= e(url('support.php')) ?>">Support</a>
     </small>
 </footer>
