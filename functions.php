@@ -3110,18 +3110,6 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
     .table td { border-top: 1px solid rgba(255,255,255,.05); }
     .table-responsive { border-radius: 16px; }
 
-    /* loading screen */
-    #loader { position: fixed; inset: 0; background: var(--rich-black); display: flex; flex-direction: column;
-        align-items: center; justify-content: center; gap: 18px; z-index: 9999;
-        transition: opacity .4s ease, visibility .4s ease; }
-    #loader.done { opacity: 0; visibility: hidden; }
-    .loader-logo { font-size: 1.7rem; font-weight: 800; letter-spacing: 3px; color: var(--text);
-        background: linear-gradient(90deg, var(--accent1), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-    .loader-bar { width: 220px; height: 3px; background: #1c1c1c; border-radius: 99px; overflow: hidden; }
-    .loader-bar span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent1), var(--accent2));
-        animation: loadbar 3s ease forwards; }
-    @keyframes loadbar { to { width: 100%; } }
-
     .glow-ring { width: 52px; height: 52px; border-radius: 50%;
         background: conic-gradient(from 0deg, var(--accent1), var(--accent2), transparent 70%);
         -webkit-mask: radial-gradient(farthest-side, transparent 62%, #000 64%);
@@ -3165,11 +3153,6 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
 <?php endif; ?>
 </head>
 <body>
-<div id="loader">
-    <div class="glow-ring"></div>
-    <div class="loader-logo"><?= e($cfg['site_name']) ?></div>
-    <div class="loader-bar"><span></span></div>
-</div>
 <nav class="navbar navbar-expand-lg mb-4">
     <div class="container">
         <a class="navbar-brand fw-bold" href="<?= e($cfg['base_url']) ?>"><?= e($cfg['site_name']) ?></a>
@@ -3476,16 +3459,6 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
         refresh();
         setInterval(refresh, 15000);
     })();
-
-    window.addEventListener('load', function () {
-        var first = true;
-        try { first = !sessionStorage.getItem('kb_seen'); } catch (e) {}
-        if (first) { try { sessionStorage.setItem('kb_seen', '1'); } catch (e) {} }
-        setTimeout(function () {
-            var el = document.getElementById('loader');
-            if (el) { el.classList.add('done'); }
-        }, first ? 3200 : 250);
-    });
 
     // smooth reveal-on-scroll (AOS-style)
     (function () {
