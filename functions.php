@@ -3163,16 +3163,26 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
         <div class="collapse navbar-collapse" id="site-nav">
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('index.php?new=1')) ?>">New Paste</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('list.php')) ?>">Browse</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('search.php')) ?>">Search</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('users.php')) ?>">Users</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('links.php')) ?>">My Links</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('trackers.php')) ?>">Trackers</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('bio_edit.php')) ?>">Bios</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('dashboard.php')) ?>">Dashboard</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('files.php')) ?>">Files</a></li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Explore</a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="<?= e(url('list.php')) ?>">Browse pastes</a></li>
+                        <li><a class="dropdown-item" href="<?= e(url('search.php')) ?>">Search</a></li>
+                        <li><a class="dropdown-item" href="<?= e(url('users.php')) ?>">Users</a></li>
+                        <li><a class="dropdown-item" href="<?= e(url('wiki.php')) ?>">Wiki</a></li>
+                    </ul>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">My Stuff</a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="<?= e(url('links.php')) ?>">My Links</a></li>
+                        <li><a class="dropdown-item" href="<?= e(url('trackers.php')) ?>">Trackers</a></li>
+                        <li><a class="dropdown-item" href="<?= e(url('bio_edit.php')) ?>">Bios</a></li>
+                        <li><a class="dropdown-item" href="<?= e(url('dashboard.php')) ?>">Dashboard</a></li>
+                        <li><a class="dropdown-item" href="<?= e(url('files.php')) ?>">Files</a></li>
+                    </ul>
+                </li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('tools/')) ?>">Tools</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= e(url('wiki.php')) ?>">Wiki</a></li>
                 <li class="nav-item"><a class="nav-link text-warning" href="<?= e(url('support.php')) ?>">Support</a></li>
             </ul>
             <ul class="navbar-nav">
@@ -3441,7 +3451,7 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
     })();
 </script>
 <?php endif; ?>
-
+<script>
     // --- Live online counter (heartbeat + real-time polling) ---
     (function () {
         var api = '<?= e($GLOBALS['CFG']['base_url']) ?>api.php';
