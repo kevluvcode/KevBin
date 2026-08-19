@@ -745,18 +745,17 @@ if (!defined('APP_INITIALIZED')) {
     }
 
     // Throttled auto-scan hook — piggybacks on real page loads (no cron on the
-    // free host). Runs at most once per btc_scan_interval seconds.
+    // free host). Runs at most once per btc_scan_interval seconds (file-based,
+    // no DB query for the throttle check itself).
     function maybe_run_btc_scan(): void
     {
         if ((string)($GLOBALS['CFG']['bitcoin_address'] ?? '') === '') {
             return;
         }
         $interval = (int)($GLOBALS['CFG']['btc_scan_interval'] ?? 300);
-        $last = (int)(site_option_get('last_btc_scan') ?? 0);
-        if (time() - $last < $interval) {
+        if (throttle_file('btc_scan', $interval)) {
             return;
         }
-        site_option_set('last_btc_scan', (string)time());
         scan_btc_payments();
     }
 
@@ -1323,10 +1322,22 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
         return (int)$s->fetchColumn() > 0;
     }
 
+    // Lightweight file-based throttle — avoids a DB query on every request.
+    // Returns true if the key was hit within the cooldown window.
+    function throttle_file(string $key, int $seconds): bool
+    {
+        $dir = sys_get_temp_dir();
+        $file = $dir . '/kb_' . md5($key);
+        if (file_exists($file) && (time() - filemtime($file)) < $seconds) {
+            return true;
+        }
+        touch($file);
+        return false;
+    }
+
     // Applies any missing schema (votes/comments tables, users.alias/profile_views,
     // pastes.description/tags) — idempotent and safe to run on every page render.
-    // Runs at most once every 30 minutes to avoid slow information_schema queries
-    // on every request.
+    // Runs at most once every 30 minutes via file-based throttle (no DB query).
     function schema_ensure(bool $force = false): void
     {
         static $ran = false;
@@ -1339,12 +1350,9 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
             return;
         }
         try {
-            // Skip if we migrated recently (30 min throttle).
-            if (!$force) {
-                $lastRun = (int)(site_option_get('last_schema_run') ?? 0);
-                if (time() - $lastRun < 1800) {
-                    return;
-                }
+            // Skip if we migrated recently (30 min throttle, file-based = no DB query).
+            if (!$force && throttle_file('schema_ensure', 1800)) {
+                return;
             }
             $pdo = db();
             // Not installed yet — nothing to migrate. Checked first so this is a
@@ -1868,8 +1876,6 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                     log_activity('schema_migrate', 'seeded community wiki home page');
                 }
             }
-            // Mark migration timestamp so we don't re-run for 30 minutes.
-            site_option_set('last_schema_run', (string)time());
         } catch (Throwable $t) {
             error_log('[schema_ensure] ' . $t->getMessage());
         }
@@ -2217,8 +2223,16 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
     function online_stale_seconds(): int { return 90; }
 
     // Records this visitor's presence (keyed by IP) and returns the live count.
+    // Throttled to once per 15s per IP (avoids 3 DB queries on every request).
     function online_ping(?string $token = null): int
     {
+        // Cached in-process: return cached count if we already pinged recently.
+        static $lastPing = 0;
+        static $cachedCount = 0;
+        $now = time();
+        if ($now - $lastPing < 15) {
+            return $cachedCount;
+        }
         try {
             $pdo = db();
             $ip = client_ip();
@@ -2226,7 +2240,9 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                 ON DUPLICATE KEY UPDATE last_seen = UTC_TIMESTAMP()')
                 ->execute([$ip]);
             $pdo->exec('DELETE FROM online WHERE last_seen < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ' . online_stale_seconds() . ' SECOND)');
-            return online_count();
+            $lastPing = $now;
+            $cachedCount = online_count();
+            return $cachedCount;
         } catch (Throwable $t) {
             return 0;
         }
