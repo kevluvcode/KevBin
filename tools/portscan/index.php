@@ -34,22 +34,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             log_activity('tool_portscan', $host . ' (' . $targetIp . ')');
             $ports = $portLists[$portsMode];
-            $timeout = 1.0;
+            $bridgeUrl = rtrim((string)($cfg['worker_url'] ?? $cfg['discord_bridge_url'] ?? ''), '/');
+            $useWorker = $bridgeUrl !== '';
             $start = microtime(true);
             foreach ($ports as $port) {
                 if (microtime(true) - $start > 20) {
-                    break; // hard cap so a slow target can't stall the page
+                    break;
                 }
-                $sock = @fsockopen($targetIp, $port, $errno, $errstr, $timeout);
-                if (is_resource($sock)) {
-                    fclose($sock);
-                    $results[] = ['port' => $port, 'state' => 'open', 'service' => (string)getservbyport($port, 'tcp')];
-                } elseif ((int)$errno === 10061) {
-                    // WSAECONNREFUSED — host answered with RST: clearly closed.
-                    $results[] = ['port' => $port, 'state' => 'closed', 'service' => ''];
+                if ($useWorker) {
+                    // Route through Cloudflare Worker TCP proxy
+                    $result = worker_tcp_probe($bridgeUrl, $targetIp, $port, 3000);
+                    $results[] = $result;
                 } else {
-                    // Timeout / drop / reset — treated as filtered (no useful reply).
-                    $results[] = ['port' => $port, 'state' => 'filtered', 'service' => ''];
+                    $sock = @fsockopen($targetIp, $port, $errno, $errstr, 1.0);
+                    if (is_resource($sock)) {
+                        fclose($sock);
+                        $results[] = ['port' => $port, 'state' => 'open', 'service' => (string)getservbyport($port, 'tcp')];
+                    } elseif ((int)$errno === 10061) {
+                        $results[] = ['port' => $port, 'state' => 'closed', 'service' => ''];
+                    } else {
+                        $results[] = ['port' => $port, 'state' => 'filtered', 'service' => ''];
+                    }
                 }
             }
         }
@@ -126,3 +131,34 @@ page_header('Port Scanner');
     <?php endif; ?>
 </div>
 <?php page_footer(); ?>
+
+<?php
+/**
+ * Probe a single TCP port via the Cloudflare Worker proxy.
+ */
+function worker_tcp_probe(string $bridgeUrl, string $host, int $port, int $timeoutMs = 3000): array {
+    $ch = curl_init($bridgeUrl . '/proxy/tcp');
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode(['host' => $host, 'port' => $port, 'timeout_ms' => $timeoutMs]),
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_CONNECTTIMEOUT => 5,
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+
+    if ($code === 200 && $resp !== false) {
+        $data = json_decode((string)$resp, true);
+        if (is_array($data)) {
+            return [
+                'port'    => $port,
+                'state'   => $data['state'] ?? 'filtered',
+                'service' => $data['service'] ?? ((string)getservbyport($port, 'tcp')),
+            ];
+        }
+    }
+    return ['port' => $port, 'state' => 'filtered', 'service' => ''];
+}

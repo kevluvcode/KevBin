@@ -11,58 +11,226 @@ page_header('Link Spoof / Obfuscator');
 $result = null;
 $error = '';
 
+function ls_curl(string $url, array $opts = []): array {
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 8);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36');
+    foreach ($opts as $k => $v) {
+        curl_setopt($ch, $k, $v);
+    }
+    $body = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    return ['body' => (string)$body, 'status' => $code, 'error' => $err];
+}
+
+function shorten_tinyurl(string $url): array {
+    $r = ls_curl('https://tinyurl.com/api-create.php?url=' . urlencode($url));
+    $short = trim($r['body']);
+    if ($r['status'] >= 200 && $r['status'] < 400 && str_starts_with($short, 'http')) {
+        return ['ok' => true, 'short' => $short, 'status' => $r['status']];
+    }
+    return ['ok' => false, 'error' => $short !== '' ? substr($short, 0, 120) : 'empty response', 'status' => $r['status']];
+}
+
+function shorten_isgd(string $url): array {
+    $r = ls_curl('https://is.gd/create.php?format=simple&url=' . urlencode($url));
+    $short = trim($r['body']);
+    if ($r['status'] >= 200 && $r['status'] < 400 && str_starts_with($short, 'http')) {
+        return ['ok' => true, 'short' => $short, 'status' => $r['status']];
+    }
+    return ['ok' => false, 'error' => $short !== '' ? substr($short, 0, 120) : 'empty response', 'status' => $r['status']];
+}
+
+function shorten_vgd(string $url): array {
+    $r = ls_curl('https://v.gd/create.php?format=simple&url=' . urlencode($url));
+    $short = trim($r['body']);
+    if ($r['status'] >= 200 && $r['status'] < 400 && str_starts_with($short, 'http')) {
+        return ['ok' => true, 'short' => $short, 'status' => $r['status']];
+    }
+    return ['ok' => false, 'error' => $short !== '' ? substr($short, 0, 120) : 'empty response', 'status' => $r['status']];
+}
+
+function shorten_dagd(string $url): array {
+    $r = ls_curl('https://da.gd/s?url=' . urlencode($url));
+    $short = trim($r['body']);
+    if ($r['status'] >= 200 && $r['status'] < 400 && str_starts_with($short, 'http')) {
+        return ['ok' => true, 'short' => $short, 'status' => $r['status']];
+    }
+    return ['ok' => false, 'error' => $short !== '' ? substr($short, 0, 120) : 'empty response', 'status' => $r['status']];
+}
+
+function shorten_shrtr(string $url): array {
+    $r = ls_curl('https://shrtr.top/api/v1/shorten', [
+        CURLOPT_POST       => true,
+        CURLOPT_POSTFIELDS => json_encode(['url' => $url]),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+    ]);
+    $data = json_decode($r['body'], true);
+    if ($data !== null && !empty($data['short_url'])) {
+        return ['ok' => true, 'short' => $data['short_url'], 'status' => $r['status']];
+    }
+    $err = $data['title'] ?? $data['detail'] ?? ($r['error'] ?: 'failed');
+    return ['ok' => false, 'error' => $err, 'status' => $r['status']];
+}
+
+function shorten_zip1(string $url): array {
+    $r = ls_curl('https://zip1.io/api/create', [
+        CURLOPT_POST       => true,
+        CURLOPT_POSTFIELDS => json_encode(['url' => $url]),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+    ]);
+    $data = json_decode($r['body'], true);
+    if ($data !== null && !empty($data['short_url'])) {
+        return ['ok' => true, 'short' => $data['short_url'], 'status' => $r['status']];
+    }
+    $err = $data['message'] ?? $data['error'] ?? ($r['error'] ?: 'failed');
+    return ['ok' => false, 'error' => $err, 'status' => $r['status']];
+}
+
+function shorten_kevbin(string $url): array {
+    $cfg = $GLOBALS['CFG'];
+    $baseUrl = rtrim((string)($cfg['base_url'] ?? ''), '/');
+
+    $r = ls_curl($baseUrl . '/api.php?action=link.create', [
+        CURLOPT_POST       => true,
+        CURLOPT_POSTFIELDS => http_build_query(['action' => 'link.create', 'url' => $url]),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+    ]);
+
+    $body = $r['body'];
+
+    if (str_contains($body, 'toNumbers') && str_contains($body, 'slowAES')) {
+        $cookie = solve_aes_challenge($body);
+        if ($cookie !== null) {
+            preg_match('/location\.href="([^"]+)"/', $body, $m);
+            $redirUrl = $m[1] ?? ($baseUrl . '/api.php?action=link.create');
+            $r2 = ls_curl($redirUrl, [
+                CURLOPT_POST       => true,
+                CURLOPT_POSTFIELDS => http_build_query(['action' => 'link.create', 'url' => $url]),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/x-www-form-urlencoded',
+                    'Cookie: __test=' . $cookie,
+                ],
+            ]);
+            $body = $r2['body'];
+        }
+    }
+
+    $data = json_decode($body, true);
+    if ($data !== null && !empty($data['ok']) && !empty($data['short'])) {
+        return ['ok' => true, 'short' => $data['short'], 'status' => $r['status']];
+    }
+    $err = $data['error'] ?? ($r['error'] ?: 'failed');
+    return ['ok' => false, 'error' => $err, 'status' => $r['status']];
+}
+
+function solve_aes_challenge(string $html): ?string {
+    if (!preg_match_all('/toNumbers\("([0-9a-f]+)"\)/', $html, $m)) return null;
+    if (count($m[1]) < 3) return null;
+    $a = hex2bin($m[1][0]);
+    $b = hex2bin($m[1][1]);
+    $c = hex2bin($m[1][2]);
+    if ($a === false || $b === false || $c === false) return null;
+
+    $cipher = openssl_decrypt($c, 'aes-128-cbc', $b, OPENSSL_RAW_DATA, $a);
+    if ($cipher === false) return null;
+    $pad = ord($cipher[strlen($cipher) - 1]);
+    if ($pad >= 1 && $pad <= 16) {
+        $cipher = substr($cipher, 0, -$pad);
+    }
+    return bin2hex($cipher);
+}
+
+function shorten_url(string $url, string $service): array {
+    $map = [
+        'tinyurl' => 'shorten_tinyurl',
+        'isgd'    => 'shorten_isgd',
+        'vgd'     => 'shorten_vgd',
+        'dagd'    => 'shorten_dagd',
+        'shrtr'   => 'shorten_shrtr',
+        'zip1'    => 'shorten_zip1',
+        'kevbin'  => 'shorten_kevbin',
+    ];
+    if (!isset($map[$service])) {
+        return ['ok' => false, 'service' => $service, 'error' => 'unknown service', 'status' => 0];
+    }
+    $fn = $map[$service];
+    $result = $fn($url);
+    $result['service'] = $service;
+    return $result;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify_or_fail();
     if (!rate_limit_check('link-spoof', 5, 60)) {
         $error = 'Too many requests. Wait a minute.';
     } else {
-        $cfg = $GLOBALS['CFG'];
-        $bridgeUrl = rtrim((string)($cfg['worker_url'] ?? ''), '/');
-        if ($bridgeUrl === '') {
-            $error = 'Worker bridge not configured.';
+        $targetUrl = trim((string)($_POST['url'] ?? ''));
+        if ($targetUrl === '' || (!str_starts_with($targetUrl, 'http://') && !str_starts_with($targetUrl, 'https://'))) {
+            $error = 'Enter a valid URL starting with http:// or https://';
         } else {
-            $targetUrl = trim((string)($_POST['url'] ?? ''));
-            if ($targetUrl === '' || (!str_starts_with($targetUrl, 'http://') && !str_starts_with($targetUrl, 'https://'))) {
-                $error = 'Enter a valid URL starting with http:// or https://';
-            } else {
-                $obfuscations = $_POST['obfuscations'] ?? [];
-                $shorteners = $_POST['shorteners'] ?? ['tinyurl', 'isgd', 'vgd', 'shrtr', 'kevbin'];
-                $rounds = max(1, min(30, (int)($_POST['rounds'] ?? 3)));
+            $obfuscations = array_values($_POST['obfuscations'] ?? []);
+            $shorteners   = array_values($_POST['shorteners'] ?? ['tinyurl', 'isgd', 'vgd']);
+            $rounds       = max(1, min(15, (int)($_POST['rounds'] ?? 3)));
 
-                $payload = [
-                    'url'           => $targetUrl,
-                    'obfuscations'  => array_values($obfuscations),
-                    'shorteners'    => array_values($shorteners),
-                    'rounds'        => $rounds,
-                ];
+            $parsed = parse_url($targetUrl);
+            $host = $parsed['host'] ?? '';
+            $path = ($parsed['path'] ?? '/') . (isset($parsed['query']) ? '?' . $parsed['query'] : '');
 
-                $ch = curl_init($bridgeUrl . '/link-spoof');
-                curl_setopt_array($ch, [
-                    CURLOPT_POST           => true,
-                    CURLOPT_POSTFIELDS     => json_encode($payload),
-                    CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT        => 60,
-                    CURLOPT_CONNECTTIMEOUT => 10,
-                ]);
-                $resp = curl_exec($ch);
-                $httpCode = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-                $curlErr = curl_error($ch);
-                curl_close($ch);
+            $variants = [];
+            if (in_array('percent', $obfuscations)) {
+                $encoded = implode('', array_map(fn($c) => $c === '.' ? '.' : '%' . bin2hex($c), str_split($host)));
+                $variants[] = ['type' => 'Percent Encoded', 'url' => ($parsed['scheme'] ?? 'https') . '://' . $encoded . $path];
+            }
+            if (in_array('unicode', $obfuscations)) {
+                $map2 = ['a'=>'а','e'=>'е','o'=>'о','p'=>'р','c'=>'с','i'=>'і'];
+                $uni = implode('', array_map(fn($c) => $map2[$c] ?? $c, str_split($host)));
+                $variants[] = ['type' => 'Unicode Homoglyphs', 'url' => ($parsed['scheme'] ?? 'https') . '://' . $uni . $path];
+            }
+            if (in_array('subdomain', $obfuscations)) {
+                $variants[] = ['type' => 'Fake Subdomain', 'url' => ($parsed['scheme'] ?? 'https') . '://' . $host . '.' . $host . $path];
+            }
+            if (in_array('double_encode', $obfuscations)) {
+                $double = rawurlencode(rawurlencode($targetUrl));
+                $variants[] = ['type' => 'Double Encoded', 'url' => ($parsed['scheme'] ?? 'https') . '://' . $host . '/redirect?url=' . $double];
+            }
+            if (in_array('at_trick', $obfuscations)) {
+                $variants[] = ['type' => '@ Trick', 'url' => ($parsed['scheme'] ?? 'https') . '://' . $host . '@' . $host . $path];
+            }
+            if (in_array('ip_decimal', $obfuscations)) {
+                $parts = explode('.', $host);
+                if (count($parts) === 4 && array_reduce($parts, fn($ok, $p) => $ok && is_numeric($p) && (int)$p >= 0 && (int)$p <= 255, true)) {
+                    $dec = (int)$parts[0] * 16777216 + (int)$parts[1] * 65536 + (int)$parts[2] * 256 + (int)$parts[3];
+                    $variants[] = ['type' => 'IP Decimal', 'url' => ($parsed['scheme'] ?? 'https') . '://' . $dec . $path];
+                }
+            }
 
-                if ($curlErr !== '') {
-                    $error = 'Worker request failed: ' . $curlErr;
-                } else {
-                    $data = json_decode((string)$resp, true);
-                    if ($data !== null && isset($data['ok']) && $data['ok']) {
-                        $result = $data;
-                    } elseif ($data !== null && isset($data['error'])) {
-                        $error = 'Worker error: ' . $data['error'];
-                    } else {
-                        $error = 'Unexpected response (HTTP ' . $httpCode . ')';
+            $chain = [];
+            $current = $targetUrl;
+
+            for ($round = 0; $round < $rounds; $round++) {
+                foreach ($shorteners as $svc) {
+                    $r = shorten_url($current, $svc);
+                    $chain[] = array_merge($r, ['round' => $round + 1]);
+                    if ($r['ok'] && !empty($r['short'])) {
+                        $current = $r['short'];
                     }
                 }
             }
+
+            $result = [
+                'original'           => $targetUrl,
+                'obfuscated_variants' => $variants,
+                'chain'              => $chain,
+                'final'              => $current,
+                'total_rounds'       => $rounds,
+            ];
         }
     }
 }
@@ -91,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="mb-3">
                 <?php foreach ($result['obfuscated_variants'] as $v): ?>
                     <div class="input-group input-group-sm mb-1">
-                        <span class="input-group-text" style="min-width:120px;"><?= e($v['type'] ?? '') ?></span>
+                        <span class="input-group-text" style="min-width:140px;"><?= e($v['type'] ?? '') ?></span>
                         <input class="form-control form-control-sm font-monospace" readonly value="<?= e($v['url'] ?? '') ?>">
                         <button class="btn btn-outline-secondary btn-sm" onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)">Copy</button>
                     </div>
@@ -103,11 +271,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <h2 class="h6 mb-2">Shortener Chain</h2>
                 <div class="table-responsive">
                 <table class="table table-sm table-striped small mb-0">
-                    <thead><tr><th>#</th><th>Shortener</th><th>Short URL</th><th>HTTP</th><th></th></tr></thead>
+                    <thead><tr><th>#</th><th>Round</th><th>Shortener</th><th>Short URL</th><th>HTTP</th><th></th></tr></thead>
                     <tbody>
                     <?php foreach ($result['chain'] as $i => $c): ?>
                         <tr class="<?= ($c['ok'] ?? false) ? '' : 'table-danger' ?>">
                             <td><?= $i + 1 ?></td>
+                            <td><?= (int)($c['round'] ?? 0) ?></td>
                             <td><?= e($c['service'] ?? '') ?></td>
                             <td class="font-monospace text-break"><?= e($c['short'] ?? $c['error'] ?? 'failed') ?></td>
                             <td><?= (int)($c['status'] ?? 0) ?></td>
@@ -125,7 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <?php if (!empty($result['final'])): ?>
                 <div class="mt-3 p-3 bg-dark rounded">
-                    <div class="small text-secondary mb-1">Final shortened URL (chain <?= (int)($result['total_rounds'] ?? 0) ?>x shortened):</div>
+                    <div class="small text-secondary mb-1">Final shortened URL (chain <?= (int)($result['total_rounds'] ?? 0) ?> rounds):</div>
                     <div class="input-group">
                         <input class="form-control font-monospace" readonly value="<?= e($result['final']) ?>">
                         <button class="btn btn-success" onclick="navigator.clipboard.writeText(this.previousElementSibling.value);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy Final URL',1500)">Copy Final URL</button>
@@ -216,18 +385,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label class="form-check-label small" for="s5">Shrtr</label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="zip1" id="s6">
-                            <label class="form-check-label small" for="s6">zip1.io</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="kevbin" id="s7">
-                            <label class="form-check-label small" for="s7">KevBin</label>
+                            <input class="form-check-input" type="checkbox" name="shorteners[]" value="kevbin" id="s6">
+                            <label class="form-check-label small" for="s6">KevBin</label>
                         </div>
                     </div>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label small text-secondary">Chain rounds (1–30)</label>
-                    <input class="form-control" type="number" name="rounds" min="1" max="30" value="<?= e((string)($_POST['rounds'] ?? 3)) ?>">
+                    <label class="form-label small text-secondary">Chain rounds (1–15)</label>
+                    <input class="form-control" type="number" name="rounds" min="1" max="15" value="<?= e((string)($_POST['rounds'] ?? 3)) ?>">
                     <div class="form-text">Each round feeds the shortened URL back through all shorteners again.</div>
                 </div>
             </div>
@@ -238,6 +403,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </form>
 
-    <p class="text-secondary small mb-4">All work happens through a Cloudflare Worker. No URLs are stored. Used for security awareness and phishing education.</p>
+    <p class="text-secondary small mb-4">Shortening runs directly from the server via each shortener's public API. No URLs are stored. Used for security awareness and phishing education.</p>
 </div>
 <?php page_footer(); ?>

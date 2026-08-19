@@ -113,7 +113,16 @@ page_header('Dashboard');
     </div>
     <?php endif; ?>
 
-    <h2 class="h5 mb-3">Quick actions <span class="badge bg-success align-middle">FREE</span></h2>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h2 class="h5 mb-0">Everything on KevBin <span class="badge bg-success align-middle">FREE</span></h2>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-primary btn-sm" href="<?= e(url('index.php?new=1')) ?>">＋ New Paste</a>
+            <a class="btn btn-outline-light btn-sm" href="<?= e(url('files.php')) ?>">📁 My Files</a>
+            <a class="btn btn-outline-light btn-sm" href="<?= e(url('links.php')) ?>">🔗 My Links</a>
+            <a class="btn btn-outline-light btn-sm" href="<?= e(url('tools/')) ?>">🧰 Tools</a>
+        </div>
+    </div>
+
     <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-4">
             <div class="card h-100"><div class="card-body">
@@ -164,9 +173,44 @@ page_header('Dashboard');
         </div>
         <div class="col-sm-6 col-lg-4">
             <div class="card h-100"><div class="card-body">
+                <h3 class="h6 mb-1">Users</h3>
+                <p class="text-secondary small mb-2">Find members, check profiles and see their public pastes.</p>
+                <a class="btn btn-sm btn-outline-light" href="<?= e(url('users.php')) ?>">View users</a>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <div class="card h-100"><div class="card-body">
                 <h3 class="h6 mb-1">100+ Free Tools</h3>
                 <p class="text-secondary small mb-2">Hashing, encoders, OSINT, dev tools and more.</p>
                 <a class="btn btn-sm btn-outline-light" href="<?= e(url('tools/')) ?>">Open tools</a>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <div class="card h-100"><div class="card-body">
+                <h3 class="h6 mb-1">Wiki</h3>
+                <p class="text-secondary small mb-2">Guides, FAQ and everything about KevBin.</p>
+                <a class="btn btn-sm btn-outline-light" href="<?= e(url('wiki.php')) ?>">Read wiki</a>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <div class="card h-100"><div class="card-body">
+                <h3 class="h6 mb-1">Support &amp; Premium</h3>
+                <p class="text-secondary small mb-2">Help, premium perks and Discord community.</p>
+                <a class="btn btn-sm btn-outline-light" href="<?= e(url('support.php')) ?>">Support</a>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <div class="card h-100"><div class="card-body">
+                <h3 class="h6 mb-1">API &amp; Docs</h3>
+                <p class="text-secondary small mb-2">Programmatic paste creation and the Discord integration.</p>
+                <a class="btn btn-sm btn-outline-light" href="<?= e(url('api_docs.php')) ?>">API docs</a>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <div class="card h-100"><div class="card-body">
+                <h3 class="h6 mb-1">Settings</h3>
+                <p class="text-secondary small mb-2">Profile, theme, security and notification preferences.</p>
+                <a class="btn btn-sm btn-outline-light" href="<?= e(url('settings.php')) ?>">Settings</a>
             </div></div>
         </div>
     </div>

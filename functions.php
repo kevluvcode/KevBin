@@ -773,6 +773,184 @@ if (!defined('APP_INITIALIZED')) {
         return $cache;
     }
 
+    function block_bad_user_agents(): void
+    {
+        $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        if ($ua === '') {
+            http_response_code(403);
+            echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Access Denied</title></head>'
+                . '<body style="background:#070707;color:#f2f2f2;font-family:sans-serif;display:flex;'
+                . 'align-items:center;justify-content:center;height:100vh;margin:0;">'
+                . '<div style="text-align:center"><h1>403 Access Denied</h1><p>Your request has been blocked.</p></div></body></html>';
+            exit;
+        }
+        $blocked = [
+            'python', 'go-http', 'java/', 'curl/', 'wget', 'httpclient', 'libwww',
+            'scrapie', 'mj12bot', 'ahrefsbot', 'semrushbot', 'dotbot', 'blexbot',
+            'pycurl', 'node-fetch', 'headlesschrome', 'phantomjs',
+            'httrack', 'webcopier', 'teleport', 'extractorpro', 'offline explorer',
+            'website quester', 'webzip', 'webstripper', 'websauger', 'webleacher',
+            'webreaper', 'webcollector', 'websucker', 'realdownload', 'getright',
+            'mass downloader', 'download demon', 'fast-download', 'getweb!',
+            'go!zilla', 'go!gopro', 'leechget', 'netxtreme', 'mr. file downloader',
+            'fresh download', 'flashget', 'star downloader', 'smart downloader',
+            'reget', 'jetcar', 'prozilla', 'msieftp', 'n ipp', 'webking online',
+            'auto spider', 'didpa-http',
+            'mozilla/5.0 (compatible; msie 6.0; windows nt 5.1; sv1)',
+            'masscan', 'nmap', 'sqlmap', 'nikto', 'dirbuster', 'gobuster',
+            'ffuf', 'nuclei', 'httpx', 'subfinder',
+        ];
+        $uaLower = strtolower($ua);
+        foreach ($blocked as $bad) {
+            if (strpos($uaLower, $bad) !== false) {
+                http_response_code(403);
+                echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Access Denied</title></head>'
+                    . '<body style="background:#070707;color:#f2f2f2;font-family:sans-serif;display:flex;'
+                    . 'align-items:center;justify-content:center;height:100vh;margin:0;">'
+                    . '<div style="text-align:center"><h1>403 Access Denied</h1><p>Your request has been blocked.</p></div></body></html>';
+                exit;
+            }
+        }
+    }
+
+    function ip_challenge_check(): void
+    {
+        $uri = $_SERVER['REQUEST_URI'] ?? '/';
+        $ext = strtolower(pathinfo($uri, PATHINFO_EXTENSION));
+        $skipExtensions = ['css', 'js', 'png', 'jpg', 'ico', 'woff', 'woff2', 'svg', 'gif'];
+        if (in_array($ext, $skipExtensions, true)) {
+            return;
+        }
+        if ($uri === '/favicon.ico') {
+            return;
+        }
+        if (is_admin()) {
+            return;
+        }
+        start_session();
+        if (!empty($_SESSION['challenge_passed']) && !empty($_SESSION['challenge_time'])) {
+            if (time() - $_SESSION['challenge_time'] < 300) {
+                return;
+            }
+            unset($_SESSION['challenge_passed'], $_SESSION['challenge_time']);
+        }
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['challenge_answer'], $_POST['challenge_nonce'])) {
+            $answer = (string)$_POST['challenge_answer'];
+            $nonce = (string)$_POST['challenge_nonce'];
+            if (empty($_SESSION['challenge_nonce']) || $nonce !== $_SESSION['challenge_nonce']) {
+                http_response_code(403);
+                echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Challenge Failed</title></head>'
+                    . '<body style="background:#070707;color:#f2f2f2;font-family:sans-serif;display:flex;'
+                    . 'align-items:center;justify-content:center;height:100vh;margin:0;">'
+                    . '<div style="text-align:center"><h1>Challenge Failed</h1><p>Invalid or expired challenge. Please go back and try again.</p></div></body></html>';
+                exit;
+            }
+            $hash = hash('sha256', 'kevbin_challenge_' . $answer);
+            if (strpos($hash, '0000') === 0) {
+                unset($_SESSION['challenge_nonce']);
+                $_SESSION['challenge_passed'] = true;
+                $_SESSION['challenge_time'] = time();
+                $_SESSION['req_count'] = [];
+                return;
+            } else {
+                http_response_code(403);
+                echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Challenge Failed</title></head>'
+                    . '<body style="background:#070707;color:#f2f2f2;font-family:sans-serif;display:flex;'
+                    . 'align-items:center;justify-content:center;height:100vh;margin:0;">'
+                    . '<div style="text-align:center"><h1>Challenge Failed</h1><p>Incorrect answer. Please go back and try again.</p></div></body></html>';
+                exit;
+            }
+        }
+        if (!isset($_SESSION['req_count']) || !is_array($_SESSION['req_count'])) {
+            $_SESSION['req_count'] = [];
+        }
+        $now = time();
+        $_SESSION['req_count'][] = $now;
+        $_SESSION['req_count'] = array_filter($_SESSION['req_count'], function ($t) use ($now) {
+            return ($now - $t) < 300;
+        });
+        $_SESSION['req_count'] = array_values($_SESSION['req_count']);
+        $recent60 = array_filter($_SESSION['req_count'], function ($t) use ($now) {
+            return ($now - $t) < 60;
+        });
+        $showChallenge = false;
+        if (count($_SESSION['req_count']) > 60) {
+            $showChallenge = true;
+        } elseif (count($recent60) > 30) {
+            $showChallenge = true;
+        }
+        if ($showChallenge) {
+            $nonce = bin2hex(random_bytes(16));
+            $_SESSION['challenge_nonce'] = $nonce;
+            http_response_code(403);
+            echo '<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checking your browser...</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#070707;color:#f2f2f2;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden}
+.container{text-align:center;max-width:500px;padding:2rem}
+.spinner{width:48px;height:48px;border:4px solid rgba(88,101,242,0.2);border-top-color:#5865f2;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 1.5rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+h1{font-size:1.5rem;margin-bottom:0.5rem;font-weight:600}
+p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
+.progress{width:100%;height:4px;background:rgba(88,101,242,0.2);border-radius:2px;margin-top:1.5rem;overflow:hidden}
+.progress-bar{height:100%;background:#5865f2;border-radius:2px;width:0%;transition:width 0.3s}
+.status{color:#5865f2;font-size:0.85rem;margin-top:0.75rem}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="spinner"></div>
+<h1>Checking your browser...</h1>
+<p>This process is automatic. Your browser will redirect shortly.</p>
+<div class="progress"><div class="progress-bar" id="pb"></div></div>
+<div class="status" id="status">Initializing verification...</div>
+</div>
+<script>
+(function(){
+    var pb=document.getElementById("pb");
+    var st=document.getElementById("status");
+    var target="' . htmlspecialchars($nonce) . '";
+    pb.style.width="20%";
+    st.textContent="Running computation...";
+    async function solve(){
+        for(var n=0;n<10000000;n++){
+            var str="kevbin_challenge_"+n;
+            var buf=new TextEncoder().encode(str);
+            var hash=await crypto.subtle.digest("SHA-256",buf);
+            var hex=Array.from(new Uint8Array(hash)).map(function(b){return b.toString(16).padStart(2,"0")}).join("");
+            if(hex.indexOf("0000")===0){
+                pb.style.width="100%";
+                st.textContent="Verification complete. Redirecting...";
+                var form=document.createElement("form");
+                form.method="POST";
+                form.action="";
+                var a1=document.createElement("input");
+                a1.type="hidden";a1.name="challenge_answer";a1.value=n.toString();
+                var a2=document.createElement("input");
+                a2.type="hidden";a2.name="challenge_nonce";a2.value=target;
+                form.appendChild(a1);
+                form.appendChild(a2);
+                document.body.appendChild(form);
+                form.submit();
+                return;
+            }
+            if(n%5000===0){pb.style.width=Math.min(80,20+Math.floor(n/1000000*60))+"%";}
+        }
+    }
+    setTimeout(solve,100);
+})();
+</script>
+</body>
+</html>';
+            exit;
+        }
+    }
+
     function ban_ip(string $ip, string $reason = '', ?int $by = null): bool
     {
         try {
@@ -1437,6 +1615,84 @@ if (!defined('APP_INITIALIZED')) {
                     $pdo->exec('ALTER TABLE geo_cache ADD COLUMN ' . $col . ' ' . $def);
                 }
             }
+            foreach (['lat' => 'VARCHAR(24) NULL', 'lon' => 'VARCHAR(24) NULL'] as $col => $def) {
+                if (table_exists($pdo, 'geo_cache') && !column_exists($pdo, 'geo_cache', $col)) {
+                    $pdo->exec('ALTER TABLE geo_cache ADD COLUMN ' . $col . ' ' . $def);
+                }
+            }
+            // Enriched per-click analytics columns (device/browser, screen, timezone, IP intel).
+            $clickCols = [
+                'browser' => 'VARCHAR(40) NULL',
+                'browser_version' => 'VARCHAR(24) NULL',
+                'os' => 'VARCHAR(40) NULL',
+                'os_version' => 'VARCHAR(24) NULL',
+                'device' => 'VARCHAR(24) NULL',
+                'is_bot' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'language' => 'VARCHAR(32) NULL',
+                'screen' => 'VARCHAR(24) NULL',
+                'timezone' => 'VARCHAR(64) NULL',
+                'dpr' => 'VARCHAR(8) NULL',
+                'touch' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'hw_concurrency' => 'VARCHAR(8) NULL',
+                'fp' => 'TEXT NULL',
+                'isp' => 'VARCHAR(120) NULL',
+                'asn' => 'VARCHAR(120) NULL',
+                'is_proxy' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'is_vpn' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'is_tor' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'is_crawler' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'lat' => 'VARCHAR(24) NULL',
+                'lon' => 'VARCHAR(24) NULL',
+            ];
+            foreach ($clickCols as $col => $def) {
+                if (table_exists($pdo, 'link_clicks') && !column_exists($pdo, 'link_clicks', $col)) {
+                    $pdo->exec('ALTER TABLE link_clicks ADD COLUMN ' . $col . ' ' . $def);
+                }
+            }
+            // Standalone analytics trackers (image-pixel beacons + visit logs).
+            if (!table_exists($pdo, 'trackers')) {
+                $pdo->exec('CREATE TABLE IF NOT EXISTS trackers (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    code VARCHAR(16) NOT NULL,
+                    title VARCHAR(120) NULL,
+                    user_id INT NULL,
+                    manage_key VARCHAR(32) NULL,
+                    views INT UNSIGNED NOT NULL DEFAULT 0,
+                    last_view DATETIME NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_trackers_code (code),
+                    KEY idx_trackers_user (user_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+                log_activity('schema_migrate', 'created trackers table');
+            }
+            if (!table_exists($pdo, 'tracker_views')) {
+                $pdo->exec('CREATE TABLE IF NOT EXISTS tracker_views (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    tracker_id INT NOT NULL,
+                    ip VARCHAR(45) NULL,
+                    ua VARCHAR(255) NULL,
+                    referer VARCHAR(512) NULL,
+                    country VARCHAR(64) NULL,
+                    region VARCHAR(64) NULL,
+                    city VARCHAR(64) NULL,
+                    isp VARCHAR(120) NULL,
+                    asn VARCHAR(120) NULL,
+                    is_proxy TINYINT(1) NOT NULL DEFAULT 0,
+                    is_vpn TINYINT(1) NOT NULL DEFAULT 0,
+                    is_tor TINYINT(1) NOT NULL DEFAULT 0,
+                    is_crawler TINYINT(1) NOT NULL DEFAULT 0,
+                    browser VARCHAR(40) NULL,
+                    browser_version VARCHAR(24) NULL,
+                    os VARCHAR(40) NULL,
+                    os_version VARCHAR(24) NULL,
+                    device VARCHAR(24) NULL,
+                    is_bot TINYINT(1) NOT NULL DEFAULT 0,
+                    language VARCHAR(32) NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY idx_tviews_tracker (tracker_id, created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+                log_activity('schema_migrate', 'created tracker_views table');
+            }
             // Online presence (live "N online" counter) — keyed by IP so a single
             // person with many tabs/visits still counts as one.
             if (!table_exists($pdo, 'online')) {
@@ -1964,6 +2220,71 @@ if (!defined('APP_INITIALIZED')) {
         return $code;
     }
 
+    function generate_tracker_code(int $length = 6): string
+    {
+        $alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $max = strlen($alphabet) - 1;
+        $pdo = db();
+        $guard = 0;
+        do {
+            $code = '';
+            for ($i = 0; $i < $length; $i++) {
+                $code .= $alphabet[random_int(0, $max)];
+            }
+            $stmt = $pdo->prepare('SELECT 1 FROM trackers WHERE code = ?');
+            $stmt->execute([$code]);
+            $guard++;
+        } while ($stmt->fetch() && $guard < 1000);
+        return $code;
+    }
+
+    function tracker_pixel_url(string $code): string
+    {
+        $base = (string)($GLOBALS['CFG']['base_url'] ?? '');
+        return rtrim($base, '/') . '/t/px/' . rawurlencode($code) . '.gif';
+    }
+
+    // Logs one hit on an analytics tracker. When $detailed is false the raw hit is
+    // still counted, but per-Visit details are skipped (rate-limit throttle).
+    function tracker_record_view(int $trackerId, bool $detailed = true): void
+    {
+        try {
+            $pdo = db();
+            if ($detailed) {
+                $ip = client_ip();
+                $ua = mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
+                $referer = mb_substr((string)($_SERVER['HTTP_REFERER'] ?? ''), 0, 512);
+                $env = collect_click_env();
+                $geo = lookup_ip_geo($ip);
+                $pdo->prepare(
+                    'INSERT INTO tracker_views
+                        (tracker_id, ip, ua, referer, country, region, city, isp, asn,
+                         is_proxy, is_vpn, is_tor, is_crawler,
+                         browser, browser_version, os, os_version, device, is_bot, language)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                )->execute([
+                    $trackerId,
+                    $ip,
+                    $ua !== '' ? $ua : null,
+                    $referer !== '' ? $referer : null,
+                    $geo['country'], $geo['region'], $geo['city'],
+                    $geo['isp'], $geo['asn'],
+                    (int)$geo['is_proxy'], (int)$geo['is_vpn'], (int)$geo['is_tor'], (int)$geo['is_crawler'],
+                    $env['browser'] !== 'Unknown' ? $env['browser'] : null,
+                    $env['browser_version'] !== '' ? $env['browser_version'] : null,
+                    $env['os'] !== 'Unknown' ? $env['os'] : null,
+                    $env['os_version'] !== '' ? $env['os_version'] : null,
+                    $env['device'],
+                    (int)$env['is_bot'],
+                    $env['language'],
+                ]);
+            }
+            $pdo->prepare('UPDATE trackers SET views = views + 1, last_view = UTC_TIMESTAMP() WHERE id = ?')->execute([$trackerId]);
+        } catch (Throwable $t) {
+            error_log('[tracker_record_view] ' . $t->getMessage());
+        }
+    }
+
     // Fetches a URL server-side (JSON/HTML). Returns null on any failure.
     function http_get(string $url, int $timeout = 6): ?string
     {
@@ -2006,13 +2327,13 @@ if (!defined('APP_INITIALIZED')) {
     // Geo info for an IP: DB-cached (30 days), else ip-api.com, else empty.
     function lookup_ip_geo(string $ip): array
     {
-        $geo = ['country' => null, 'region' => null, 'city' => null, 'isp' => null, 'asn' => null, 'is_proxy' => 0, 'is_vpn' => 0, 'is_tor' => 0, 'is_crawler' => 0];
+        $geo = ['country' => null, 'region' => null, 'city' => null, 'isp' => null, 'asn' => null, 'is_proxy' => 0, 'is_vpn' => 0, 'is_tor' => 0, 'is_crawler' => 0, 'lat' => null, 'lon' => null];
         if (!filter_var($ip, FILTER_VALIDATE_IP)) {
             return $geo;
         }
         try {
             $pdo = db();
-            $stmt = $pdo->prepare('SELECT country, region, city, isp, asn, is_proxy, is_vpn, is_tor, is_crawler FROM geo_cache WHERE ip = ? AND fetched_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)');
+            $stmt = $pdo->prepare('SELECT country, region, city, isp, asn, is_proxy, is_vpn, is_tor, is_crawler, lat, lon FROM geo_cache WHERE ip = ? AND fetched_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)');
             $stmt->execute([$ip]);
             $row = $stmt->fetch();
             if ($row) {
@@ -2026,6 +2347,8 @@ if (!defined('APP_INITIALIZED')) {
                     'is_vpn' => (int)$row['is_vpn'],
                     'is_tor' => (int)$row['is_tor'],
                     'is_crawler' => (int)$row['is_crawler'],
+                    'lat' => $row['lat'] !== null ? $row['lat'] : null,
+                    'lon' => $row['lon'] !== null ? $row['lon'] : null,
                 ];
             }
             // ipwho.is gives geoposition + ISP/ASN and proxy/VPN/Tor/crawler flags in one call.
@@ -2044,10 +2367,12 @@ if (!defined('APP_INITIALIZED')) {
                     'is_vpn' => isset($sec['vpn']) && $sec['vpn'] ? 1 : 0,
                     'is_tor' => isset($sec['tor']) && $sec['tor'] ? 1 : 0,
                     'is_crawler' => isset($sec['crawler']) && $sec['crawler'] ? 1 : 0,
+                    'lat' => $data['latitude'] ?? null,
+                    'lon' => $data['longitude'] ?? null,
                 ];
             } else {
                 // Fallback: classic ip-api.com geo lookup.
-                $json = http_get('http://ip-api.com/json/' . rawurlencode($ip) . '?fields=status,country,regionName,city', 4);
+                $json = http_get('http://ip-api.com/json/' . rawurlencode($ip) . '?fields=status,country,regionName,city,lat,lon', 4);
                 $data = $json !== null ? json_decode($json, true) : null;
                 if (is_array($data) && ($data['status'] ?? '') === 'success') {
                     $geo = [
@@ -2056,17 +2381,21 @@ if (!defined('APP_INITIALIZED')) {
                         'city' => $data['city'] ?? null,
                         'isp' => null, 'asn' => null,
                         'is_proxy' => 0, 'is_vpn' => 0, 'is_tor' => 0, 'is_crawler' => 0,
+                        'lat' => $data['lat'] ?? null,
+                        'lon' => $data['lon'] ?? null,
                     ];
                 }
             }
             $pdo->prepare(
-                'INSERT INTO geo_cache (ip, country, region, city, isp, asn, is_proxy, is_vpn, is_tor, is_crawler)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                'INSERT INTO geo_cache (ip, country, region, city, isp, asn, is_proxy, is_vpn, is_tor, is_crawler, lat, lon)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE country = VALUES(country), region = VALUES(region), city = VALUES(city),
                     isp = VALUES(isp), asn = VALUES(asn), is_proxy = VALUES(is_proxy), is_vpn = VALUES(is_vpn),
-                    is_tor = VALUES(is_tor), is_crawler = VALUES(is_crawler), fetched_at = UTC_TIMESTAMP()'
+                    is_tor = VALUES(is_tor), is_crawler = VALUES(is_crawler), lat = VALUES(lat), lon = VALUES(lon),
+                    fetched_at = UTC_TIMESTAMP()'
             )->execute([$ip, $geo['country'], $geo['region'], $geo['city'], $geo['isp'], $geo['asn'],
-                (int)$geo['is_proxy'], (int)$geo['is_vpn'], (int)$geo['is_tor'], (int)$geo['is_crawler']]);
+                (int)$geo['is_proxy'], (int)$geo['is_vpn'], (int)$geo['is_tor'], (int)$geo['is_crawler'],
+                $geo['lat'], $geo['lon']]);
             error_log('[lookup_ip_geo] done ' . $ip);
         } catch (Throwable $t) {
             error_log('[lookup_ip_geo] ' . $t->getMessage());
@@ -2137,7 +2466,102 @@ if (!defined('APP_INITIALIZED')) {
             $isBot = true;
         }
 
-        return ['browser' => $browser, 'os' => $os, 'device' => $device, 'is_bot' => $isBot];
+        $browserVersion = '';
+        $bvPatterns = [
+            'Chrome' => '~Chrome/(\d+)~i',
+            'Firefox' => '~Firefox/(\d+)~i',
+            'Edge' => '~Edg(?:e|A)?/(\d+)~i',
+            'Opera' => '~(?:OPR|Opera)[/ ]?(\d+)~i',
+            'Safari' => '~Version/(\d+(?:\.\d+)?)~i',
+            'Internet Explorer' => '~(?:MSIE (\d+)|rv:(\d+))~i',
+        ];
+        if (isset($bvPatterns[$browser]) && preg_match($bvPatterns[$browser], $ua, $m)) {
+            $browserVersion = $m[1] !== '' ? $m[1] : ($m[2] ?? '');
+        }
+
+        $osVersion = '';
+        if ($os === 'Windows') {
+            if (preg_match('~Windows NT ([\d\.]+)~i', $ua, $m)) {
+                $nt = $m[1];
+                $map = ['6.3' => '8.1', '6.2' => '8', '6.1' => '7', '6.0' => 'Vista', '5.1' => 'XP', '5.0' => '2000', '10.0' => '10'];
+                $osVersion = $map[$nt] ?? $nt;
+            }
+        } elseif ($os === 'Android' && preg_match('~Android ([\d\.]+)~i', $ua, $m)) {
+            $osVersion = $m[1];
+        } elseif ($os === 'iOS' && preg_match('~OS (\d+)[_\.](\d+)~i', $ua, $m)) {
+            $osVersion = $m[1] . '.' . $m[2];
+        } elseif ($os === 'macOS' && preg_match('~Mac OS X ([\d_\.]+)~i', $ua, $m)) {
+            $osVersion = str_replace('_', '.', $m[1]);
+        }
+
+        return ['browser' => $browser, 'browser_version' => $browserVersion, 'os' => $os, 'os_version' => $osVersion, 'device' => $device, 'is_bot' => $isBot];
+    }
+
+    // Collects the server-side device/browser/language signals for a click,
+    // merging a UA parse with Chrome Client Hints headers (higher accuracy).
+    function collect_click_env(): array
+    {
+        $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+        $parsed = parse_user_agent($ua);
+
+        // Chrome/Edge send sec-ch-* hints with full browser version + platform.
+        $fullVersionList = (string)($_SERVER['HTTP_SEC_CH_UA_FULL_VERSION_LIST'] ?? '');
+        if ($fullVersionList !== '' && preg_match_all('~"([^"]+)";v="([^"]+)"~', $fullVersionList, $mm, PREG_SET_ORDER)) {
+            $best = $mm[0];
+            foreach ($mm as $entry) {
+                $name = strtolower($entry[1]);
+                if (strpos($name, 'chrome') !== false && strpos($name, 'chromium') === false) {
+                    $best = ['', $entry[1], $entry[2]];
+                    break;
+                }
+                if (strpos($name, 'edg') !== false) {
+                    $best = ['', $entry[1], $entry[2]];
+                    break;
+                }
+            }
+            if ($best[1] !== '' && $best[2] !== '') {
+                $mapped = ['Google Chrome' => 'Chrome', 'Microsoft Edge' => 'Edge', 'HeadlessChrome' => 'Chrome'];
+                $parsed['browser'] = $mapped[$best[1]] ?? $best[1];
+                $parsed['browser_version'] = $best[2];
+            }
+        }
+        if (($platform = (string)($_SERVER['HTTP_SEC_CH_UA_PLATFORM'] ?? '')) !== '' && preg_match('~"([^"]+)"~', $platform, $m)) {
+            $mapped = ['Windows' => 'Windows', 'macOS' => 'macOS', 'Linux' => 'Linux', 'Android' => 'Android', 'iOS' => 'iOS'];
+            $parsed['os'] = $mapped[$m[1]] ?? $parsed['os'];
+        }
+        if ($parsed['device'] === 'Computer' && strpos($ua, ' Mobi') !== false) {
+            $parsed['device'] = 'Phone';
+        }
+        if (stripos($ua, 'tablet') !== false || stripos($ua, 'ipad') !== false) {
+            $parsed['device'] = 'Tablet';
+        }
+
+        $language = '';
+        $acceptLang = (string)($_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '');
+        if ($acceptLang !== '') {
+            foreach (explode(',', $acceptLang) as $chunk) {
+                $tag = trim(explode(';', $chunk)[0]);
+                if ($tag !== '') {
+                    $language = mb_substr($tag, 0, 32);
+                    break;
+                }
+            }
+        }
+
+        return [
+            'browser' => $parsed['browser'],
+            'browser_version' => $parsed['browser_version'],
+            'os' => $parsed['os'],
+            'os_version' => $parsed['os_version'],
+            'device' => $parsed['device'],
+            'is_bot' => $parsed['is_bot'] ? 1 : 0,
+            'language' => $language !== '' ? $language : null,
+            'screen' => null,
+            'timezone' => null,
+            'dpr' => isset($_SERVER['HTTP_SEC_CH_DPR']) ? mb_substr($_SERVER['HTTP_SEC_CH_DPR'], 0, 8) : null,
+            'touch' => (($_SERVER['HTTP_SEC_CH_UA_MOBILE'] ?? '') === '?1') ? 1 : 0,
+            'hw_concurrency' => isset($_SERVER['HTTP_SEC_CH_DEVICE_MEMORY']) ? mb_substr($_SERVER['HTTP_SEC_CH_DEVICE_MEMORY'], 0, 8) : null,
+        ];
     }
 
     function link_manage_ok(array $link, ?array $me, ?string $key): bool
@@ -2248,7 +2672,13 @@ if (!defined('APP_INITIALIZED')) {
         header('Referrer-Policy: strict-origin-when-cross-origin');
         header('Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=()');
         header('Cross-Origin-Opener-Policy: same-origin');
-        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self'; connect-src 'self'; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'");
+        // A page may tighten/loosen its own CSP for local tools (e.g. the in-browser
+        // Lua VM needs 'unsafe-eval' because Fengari compiles Lua to JS functions).
+        $csp = (string)($GLOBALS['_csp'] ?? '');
+        if ($csp === '') {
+            $csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self'; connect-src 'self'; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
+        }
+        header('Content-Security-Policy: ' . $csp);
         // The site is always served over HTTPS (also when proxied by Cloudflare),
         // so HSTS is safe to advertise in production.
         $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
@@ -2349,6 +2779,8 @@ if (!defined('APP_INITIALIZED')) {
         $me = current_user();
 
         // IP ban enforcement (admins are never blocked)
+        block_bad_user_agents();
+        ip_challenge_check();
         if (ip_is_banned() && !is_admin()) {
             http_response_code(403);
             exit('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Banned</title></head>'
@@ -2475,12 +2907,20 @@ if (!defined('APP_INITIALIZED')) {
         --dim: #8f8f8f;
         --accent1: #5865f2;
         --accent2: #9146ff;
+        --radius: 18px;
+        --radius-sm: 12px;
+        --ease: cubic-bezier(.22,1,.36,1);
     }
     html { scroll-behavior: smooth; }
     body {
-        background: var(--rich-black); color: var(--text);
+        background:
+            radial-gradient(1100px 600px at 85% -10%, rgba(88,101,242,.10), transparent 60%),
+            radial-gradient(900px 500px at -10% 10%, rgba(145,70,255,.08), transparent 60%),
+            var(--rich-black);
+        color: var(--text);
         font-family: "Space Grotesk", sans-serif;
         opacity: 0; animation: bodyfade .45s ease forwards;
+        -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
     }
     /* compact + super-wide UI */
     html { font-size: 16px; }
@@ -2500,40 +2940,60 @@ if (!defined('APP_INITIALIZED')) {
     small, .form-text { font-size: .8rem; }
     h1,h2,h3,h4,h5,.navbar-brand { font-family: "Space Grotesk", sans-serif; }
     pre.paste-content, code { font-family: "JetBrains Mono", monospace; }
-    pre.paste-content { background: #0b0b0b; border: 1px solid var(--line); padding: 1rem; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
+    pre.paste-content { background: #0b0b0b; border: 1px solid var(--line); padding: 1rem; border-radius: 16px; white-space: pre-wrap; word-break: break-word; }
     .navbar {
-        background: rgba(7,7,7,.75);
-        backdrop-filter: blur(12px);
+        background: rgba(7,7,7,.72);
+        backdrop-filter: blur(16px) saturate(1.4);
+        -webkit-backdrop-filter: blur(16px) saturate(1.4);
         border-bottom: 1px solid var(--line);
         position: sticky; top: 0; z-index: 1000;
     }
     .navbar-brand { font-size: 1.35rem; font-weight: 700; letter-spacing: 1px; }
     .nav-link { font-weight: 500; }
+    .nav-item { position: relative; }
+    .nav-link::after {
+        content: ''; position: absolute; left: 0; right: 0; bottom: 2px; height: 2px;
+        background: linear-gradient(90deg, var(--accent1), var(--accent2));
+        border-radius: 99px; transform: scaleX(0); transform-origin: left;
+        transition: transform .25s var(--ease);
+    }
+    .nav-link:hover::after { transform: scaleX(1); }
     .card {
         background: var(--panel); border: 1px solid var(--line); color: var(--text);
-        border-radius: 14px; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        border-radius: var(--radius); transition: transform .3s var(--ease), box-shadow .3s var(--ease), border-color .3s ease, background .3s ease;
     }
-    .card:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,.55); border-color: rgba(83,101,242,.45); }
-    .list-group-item { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); }
-    .list-group-item:hover { transform: translateX(3px); border-color: rgba(83,101,242,.5); transition: all .15s ease; }
-    .form-control, .form-select { background: #181818; border-color: var(--line); color: var(--text); }
-    .form-control:focus, .form-select:focus { background: #181818; color: var(--text); border-color: var(--accent1); box-shadow: 0 0 0 .25rem rgba(88,101,242,.25); }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 20px 50px rgba(0,0,0,.6), 0 0 0 1px rgba(83,101,242,.2), 0 0 24px rgba(88,101,242,.08); border-color: rgba(83,101,242,.55); }
+    .list-group-item { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm); margin-bottom: 4px; transition: transform .2s var(--ease), border-color .2s ease, background .2s ease, box-shadow .2s ease; }
+    .list-group-item:hover { transform: translateX(4px); border-color: rgba(83,101,242,.5); background: var(--panel); box-shadow: 0 6px 18px rgba(0,0,0,.4); }
+    .form-control, .form-select { background: #181818; border-color: var(--line); color: var(--text); border-radius: var(--radius-sm); transition: border-color .2s ease, box-shadow .2s ease, background .2s ease, transform .2s var(--ease); }
+    .form-control:focus, .form-select:focus { background: #181818; color: var(--text); border-color: var(--accent1); box-shadow: 0 0 0 .28rem rgba(88,101,242,.22); transform: translateY(-1px); }
     .form-text { color: #777; }
-    .btn { border-radius: 8px; font-weight: 600; transition: transform .1s ease, filter .15s ease; }
-    .btn:active { transform: scale(.97); }
-    .btn-primary { background: linear-gradient(135deg, var(--accent1), var(--accent2)); border: none; }
-    .btn-primary:hover { filter: brightness(1.15); }
+    .btn { border-radius: var(--radius-sm); font-weight: 600; transition: transform .18s var(--ease), box-shadow .25s ease, filter .25s ease, background .25s ease, border-color .25s ease, color .25s ease, opacity .2s ease; }
+    .btn:not(:active):hover { transform: translateY(-2px); }
+    .btn:active { transform: translateY(0) scale(.96); }
+    .btn-primary { background: linear-gradient(135deg, var(--accent1), var(--accent2)); border: none; position: relative; overflow: hidden; }
+    .btn-primary::after {
+        content: ''; position: absolute; top: 0; left: -60%; width: 50%; height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.28), transparent);
+        transform: skewX(-20deg); animation: btnshine 3.2s ease-in-out infinite;
+    }
+    @keyframes btnshine { 0% { left: -60%; } 55% { left: 130%; } 100% { left: 130%; } }
+    .btn-primary:hover { filter: brightness(1.18); box-shadow: 0 10px 26px rgba(88,101,242,.4), 0 0 0 1px rgba(88,101,242,.3); }
     .btn-outline-light { border-color: var(--line); color: var(--text); }
-    .btn-outline-light:hover { background: rgba(255,255,255,.08); color: #fff; }
-    .alert { border-radius: 10px; border: 1px solid var(--line); }
+    .btn-outline-light:hover { background: rgba(255,255,255,.08); color: #fff; border-color: rgba(255,255,255,.32); box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+    .alert { border-radius: 16px; border: 1px solid var(--line); animation: alertIn .35s var(--ease); }
+    @keyframes alertIn { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: none; } }
+    .badge { border-radius: 99px; font-weight: 600; }
+    .nav-link { transition: color .18s ease, background .18s ease; border-radius: 8px; }
     .page-link, .page-item.active .page-link { background-color: var(--panel-2); border-color: var(--line); color: var(--text); }
     .page-item.active .page-link { background: linear-gradient(135deg, var(--accent1), var(--accent2)); }
     .text-secondary { color: var(--dim) !important; }
-    a { color: var(--accent1); text-decoration: none; }
+    a { color: var(--accent1); text-decoration: none; transition: color .18s ease; }
     a:hover { color: var(--accent2); }
+    a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent1); outline-offset: 2px; border-radius: 8px; }
     .pfp { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
     .pfp-sm { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
-    .banner { width: 100%; height: 160px; object-fit: cover; border-radius: 12px; }
+    .banner { width: 100%; height: 160px; object-fit: cover; border-radius: var(--radius); }
 
     /* long-word safety: unbroken strings (URLs, usernames, base64...) must wrap
        instead of inflating flex/grid items and shoving padding gaps around */
@@ -2547,11 +3007,13 @@ if (!defined('APP_INITIALIZED')) {
 
     /* mobile: nav collapse panel, safe-area, touch targets, table scrolling */
     .navbar { padding-top: calc(.5rem + env(safe-area-inset-top)); }
-    .navbar-toggler { border-color: var(--line); }
+    .navbar-toggler { border-color: var(--line); border-radius: 10px; transition: transform .2s var(--ease), border-color .2s ease; }
+    .navbar-toggler:hover { transform: scale(1.05); }
     .navbar-toggler:focus, .navbar-toggler:active { box-shadow: 0 0 0 .25rem rgba(88,101,242,.25); }
     @media (max-width: 991.98px) {
         .navbar-collapse { background: rgba(10,10,10,.97); border: 1px solid var(--line);
-            border-radius: 12px; padding: .6rem .75rem; margin-top: .5rem; }
+            border-radius: 16px; padding: .6rem .75rem; margin-top: .5rem;
+            animation: alertIn .3s var(--ease); }
     }
     @media (max-width: 767.98px) {
         .banner { height: 110px; }
@@ -2570,10 +3032,23 @@ if (!defined('APP_INITIALIZED')) {
     body { -webkit-tap-highlight-color: transparent; }
 
     /* smooth reveal on scroll (AOS-style) */
-    .reveal { opacity: 0; transform: translateY(28px); transition: opacity .6s ease, transform .6s ease; }
+    .reveal { opacity: 0; transform: translateY(30px) scale(.985); transition: opacity .7s var(--ease), transform .7s var(--ease); will-change: opacity, transform; }
     .reveal.in-view { opacity: 1; transform: none; }
 
     @keyframes bodyfade { from { opacity: 0; } to { opacity: 1; } }
+
+    /* tables: rounded glass cards, hover rows */
+    .table { border-collapse: separate; border-spacing: 0; }
+    .table thead th {
+        background: rgba(255,255,255,.03); color: var(--dim); font-weight: 600;
+        border-bottom: 1px solid var(--line);
+    }
+    .table thead th:first-child { border-top-left-radius: 14px; }
+    .table thead th:last-child { border-top-right-radius: 14px; }
+    .table tbody tr { transition: background .2s ease, transform .2s var(--ease); }
+    .table tbody tr:hover { background: rgba(88,101,242,.06); }
+    .table td { border-top: 1px solid rgba(255,255,255,.05); }
+    .table-responsive { border-radius: 16px; }
 
     /* loading screen */
     #loader { position: fixed; inset: 0; background: var(--rich-black); display: flex; flex-direction: column;
@@ -2597,7 +3072,33 @@ if (!defined('APP_INITIALIZED')) {
     ::selection { background: var(--accent1); color: #fff; }
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: #0c0c0c; }
-    ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 99px; border: 2px solid #0c0c0c; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+    .page-link, .page-item.active .page-link { border-radius: 12px; transition: transform .18s var(--ease), background .18s ease, box-shadow .18s ease; margin: 0 2px; }
+    .page-item:not(.active) .page-link:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0,0,0,.4); }
+    .page-item.active .page-link { box-shadow: 0 6px 18px rgba(88,101,242,.35); }
+    .dropdown-menu { border-radius: 16px; border: 1px solid var(--line); box-shadow: 0 18px 44px rgba(0,0,0,.55); animation: alertIn .25s var(--ease); }
+    .dropdown-item { border-radius: 10px; margin: 2px 6px; transition: background .15s ease, transform .15s var(--ease), padding-left .2s var(--ease); }
+    .dropdown-item:hover { transform: translateX(3px); }
+    th, td { transition: background .15s ease; }
+
+    @keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    .navbar-brand { animation: floaty 5s ease-in-out infinite; }
+
+    /* code blocks & pre rounder */
+    code { background: rgba(255,255,255,.07); padding: 1px 6px; border-radius: 6px; }
+
+    /* nav-tabs / pills get rounded + active glow */
+    .nav-tabs .nav-link, .navbar .btn { border-radius: 99px; }
+    .nav-tabs .nav-link { transition: color .2s ease, background .2s ease, border-color .2s ease; }
+    .nav-tabs .nav-link.active { background: rgba(88,101,242,.15); border-color: var(--line) rgba(255,255,255,.1) transparent; }
+
+    /* smooth image reveal */
+    img { opacity: 1; transition: transform .3s var(--ease), opacity .3s ease; }
+    .card img.lazyload, img[lazy] { transition: opacity .4s ease; }
+
+    /* nice focus ring with soft glow */
+    .btn:focus-visible { box-shadow: 0 0 0 3px rgba(88,101,242,.4); }
 </style>
 <?php if (user_theme_css() !== ''): ?>
 <style id="user-theme"><?= user_theme_css() ?></style>
@@ -2623,6 +3124,7 @@ if (!defined('APP_INITIALIZED')) {
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('search.php')) ?>">Search</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('users.php')) ?>">Users</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('links.php')) ?>">My Links</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= e(url('trackers.php')) ?>">Trackers</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('dashboard.php')) ?>">Dashboard</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('files.php')) ?>">Files</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('tools/')) ?>">Tools</a></li>

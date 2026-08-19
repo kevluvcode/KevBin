@@ -54,13 +54,33 @@ if ($username !== '') {
         } else {
             // Ping each site: a 200/302 to the profile page = account exists
             // (best-effort — some sites block bots; those get marked "unknown").
+            // Route through Cloudflare Worker HTTP proxy if available.
+            $cfg = $GLOBALS['CFG'];
+            $bridgeUrl = rtrim((string)($cfg['worker_url'] ?? $cfg['discord_bridge_url'] ?? ''), '/');
+            $useWorker = $bridgeUrl !== '' && function_exists('curl_init');
             foreach ($checked as &$c) {
                 $c['status'] = 'unknown';
                 $url = filter_var($c['url'], FILTER_VALIDATE_URL);
                 if ($url === false) { continue; }
                 $scheme = strtolower((string)parse_url($url, PHP_URL_SCHEME));
                 if (!in_array($scheme, ['http', 'https'], true)) { continue; }
-                if (function_exists('curl_init')) {
+
+                if ($useWorker) {
+                    // Route through worker HTTP proxy
+                    $ch = curl_init($bridgeUrl . '/proxy/http');
+                    curl_setopt_array($ch, [
+                        CURLOPT_POST           => true,
+                        CURLOPT_POSTFIELDS     => json_encode(['url' => $url, 'method' => 'HEAD', 'timeout_ms' => 8000]),
+                        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_TIMEOUT        => 12,
+                        CURLOPT_CONNECTTIMEOUT => 5,
+                    ]);
+                    $resp = curl_exec($ch);
+                    $data = json_decode((string)$resp, true);
+                    curl_close($ch);
+                    $code = is_array($data) ? (int)($data['status'] ?? 0) : 0;
+                } elseif (function_exists('curl_init')) {
                     $ch = curl_init($url);
                     curl_setopt_array($ch, [
                         CURLOPT_RETURNTRANSFER => true,

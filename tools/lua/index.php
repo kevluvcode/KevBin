@@ -2,6 +2,9 @@
 require_once __DIR__ . '/../../functions.php';
 
 start_session();
+// Fengari's Lua VM compiles chunks to JS functions, which needs 'unsafe-eval'.
+// Give this one tool page its own CSP instead of weakening the whole site.
+$GLOBALS['_csp'] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self'; connect-src 'self'; media-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
 page_header('Lua Runner');
 ?>
 <div class="container" style="max-width: 900px;">
@@ -30,19 +33,7 @@ page_header('Lua Runner');
         <p class="text-secondary small mt-2 mb-0">Supports: variables, if/while/for, functions, tables, print, string &amp; math helpers (math.floor, string.upper...). Runs fully in your browser — no files, no network. Pairs/ipairs, goto and OOP are not supported by the tiny interpreter.</p>
     </div></div>
 </div>
-<script><?php
-// Inline the Fengari engine directly into this page (PHP embeds the real JS).
-// We can't `<script src>` it: InfinityFree's bot-check serves JS assets as an
-// HTML challenge (text/html), which browsers refuse to execute, so window.fengari
-// would never be defined. Served inline, it ships inside the page response the
-// bot-check already let through — guaranteeing the VM loads.
-$__feng = @file_get_contents(__DIR__ . '/../../assets/fengari-web.js');
-if ($__feng !== false && strpos($__feng, 'fengari') !== false) {
-    echo $__feng;
-} else {
-    echo 'window.fengari = null;';
-}
-?></script>
+<script src="/assets/fengari-web.js"></script>
 <script>
 var fengari = window.fengari;
 

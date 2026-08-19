@@ -55,7 +55,7 @@ page_header('Shorten a link');
 ?>
 <div class="container" style="max-width: 800px;">
     <h1 class="h4 mb-1 reveal in-view">🔗 Shorten a link</h1>
-    <p class="text-secondary mb-4 reveal in-view">Create a short KevBin link. With tracking on, every click records the visitor's IP, device and approximate location.</p>
+    <p class="text-secondary mb-4 reveal in-view">Create a short KevBin link. With tracking on, every click records the visitor's IP, location, ISP &amp; ASN, proxy/VPN/Tor flags, browser, OS, device, screen, timezone, language and a canvas fingerprint.</p>
 
     <?php if ($created !== null): ?>
         <div class="card mb-4 reveal in-view">
@@ -127,7 +127,8 @@ page_header('Shorten a link');
     <div class="alert alert-secondary mt-4 reveal">
         <strong>Heads up:</strong> this is an analytics-style tracker. Only log visits to links you
         own or are authorized to monitor, and keep the location "approximate" — it comes from the
-        visitor's ISP info, not their exact address. Visitors are never logged beyond the click record.
+        visitor's ISP info, not their exact address. The fingerprint beacon runs on a redirect page
+        and records screen/timezone/canvas-style signals; visitors are never logged beyond the click record.
     </div>
 </div>
 <script>

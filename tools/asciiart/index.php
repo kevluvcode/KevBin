@@ -34,14 +34,14 @@ $fonts = KbFiglet::fontList();
                 <div class="col-md-6">
                     <label class="form-label">Font</label>
                     <input id="aa-filter" type="search" class="form-control mb-1" placeholder="Filter font names…" autocomplete="off" oninput="filterFonts()">
-                    <select id="aa-font" name="aa_font" class="form-select mb-2" style="max-height:220px;" size="8">
+                    <select id="aa-font" name="aa_font" class="form-select mb-2" onchange="this.blur()">
                         <?php foreach ($fonts as $f): ?>
                             <option value="<?php echo htmlspecialchars($f['name']); ?>" data-kb="<?php echo htmlspecialchars($f['kb']); ?>" <?php echo $f['name'] === $curFont ? 'selected' : ''; ?>><?php echo htmlspecialchars($f['name']); ?></option>
                         <?php endforeach; ?>
                     </select>
                     <div class="d-flex gap-2 mb-2">
                         <button type="submit" class="btn btn-primary btn-sm">Render</button>
-                        <button type="button" class="btn btn-outline-light btn-sm" onclick="aaCopy()">Copy</button>
+                        <button type="button" class="btn btn-outline-light btn-sm" id="aa-copy-btn" onclick="aaCopy()">Copy</button>
                     </div>
                     <label class="form-label mb-1">Image → ASCII (optional, local only)</label>
                     <input type="file" id="aa-file" class="form-control form-control-sm" accept="image/*" onchange="aaImage(this.files[0])">
@@ -69,8 +69,24 @@ function filterFonts() {
 }
 function aaCopy() {
     var el = document.getElementById('aa-out');
-    el.select();
-    if (navigator.clipboard) navigator.clipboard.writeText(el.value).then(aaInfo); else { document.execCommand('copy'); aaInfo(); }
+    var btn = document.getElementById('aa-copy-btn');
+    var txt = el.value;
+    if (!txt) return;
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(txt).then(function () { aaCopied(btn); });
+    } else {
+        el.select();
+        document.execCommand('copy');
+        aaCopied(btn);
+    }
+}
+function aaCopied(btn) {
+    if (!btn) return;
+    var orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.classList.add('active');
+    setTimeout(function () { btn.textContent = orig; btn.classList.remove('active'); }, 1500);
+    aaInfo();
 }
 function aaInfo() {
     var v = document.getElementById('aa-out').value;
