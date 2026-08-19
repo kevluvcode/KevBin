@@ -14,6 +14,11 @@ ServerSignature Off
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^s/([A-Za-z0-9]{3,16})/?$ s.php?code=$1 [L,QSA]
 
+    # Bio pages: /b/yourname
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^b/([A-Za-z0-9_-]{3,40})/?$ bio.php?u=$1 [L,QSA]
+
     # Analytics tracking pixels: /t/px/Abc123.gif (extension is cosmetic)
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d

@@ -1772,6 +1772,30 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
                 log_activity('schema_migrate', 'created file_shares table');
             }
+            // Personal bio pages (guns.lol-style): custom slug URL + name + buttons.
+            if (!table_exists($pdo, 'bios')) {
+                $pdo->exec(
+                    'CREATE TABLE IF NOT EXISTS bios (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        slug VARCHAR(40) NOT NULL,
+                        user_id INT NULL,
+                        manage_key VARCHAR(32) NULL,
+                        display_name VARCHAR(80) NOT NULL,
+                        bio_text VARCHAR(1000) NULL,
+                        avatar_url VARCHAR(500) NULL,
+                        background VARCHAR(24) NOT NULL DEFAULT \'aurora\',
+                        accent VARCHAR(7) NOT NULL DEFAULT \'#5865f2\',
+                        buttons TEXT NULL,
+                        clicks INT UNSIGNED NOT NULL DEFAULT 0,
+                        last_click DATETIME NULL,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_bios_slug (slug),
+                        KEY idx_bios_user (user_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+                );
+                log_activity('schema_migrate', 'created bios table');
+            }
             // Persistent error log (admin viewer page reads this).
             if (!table_exists($pdo, 'error_logs')) {
                 $pdo->exec('CREATE TABLE IF NOT EXISTS error_logs (
@@ -3125,6 +3149,7 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('users.php')) ?>">Users</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('links.php')) ?>">My Links</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('trackers.php')) ?>">Trackers</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= e(url('bio_edit.php')) ?>">Bios</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('dashboard.php')) ?>">Dashboard</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('files.php')) ?>">Files</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= e(url('tools/')) ?>">Tools</a></li>
