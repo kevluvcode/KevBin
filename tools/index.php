@@ -779,6 +779,15 @@ page_header('Tools');
             </div></div>
         </div>
 
+        <div class="col reveal">
+            <div class="card h-100"><div class="card-body d-flex flex-column">
+                <h3 class="h6 mb-2">📈 Link Tracker</h3>
+                <p class="text-secondary small flex-grow-1">Create a redirect link that logs every click — IP, approximate location &amp; ISP, browser, OS, device, screen, timezone and a fingerprint beacon — with a live analytics panel. All on KevBin's built-in tracker system.</p>
+                <a class="btn btn-outline-light btn-sm mt-2" href="link-tracker/">Open</a>
+                <span class="text-secondary small mt-2">⚠️ Only track links you own or are authorized to monitor.</span>
+            </div></div>
+        </div>
+
     </div>
     </div>
 
