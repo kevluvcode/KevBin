@@ -154,6 +154,10 @@ if (!defined('APP_INITIALIZED')) {
 
     function rate_limit_check(string $bucket, int $limit, int $windowSeconds): bool
     {
+        // Admins bypass every rate limit (moderation/testing).
+        if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['user_id']) && is_admin()) {
+            return true;
+        }
         $ip = client_ip();
         $pdo = db();
         $cut = gmdate('Y-m-d H:i:s', time() - $windowSeconds);
@@ -1796,6 +1800,11 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
                 );
                 log_activity('schema_migrate', 'created bios table');
             }
+            // Full custom-style JSON for bio pages (background, colors, buttons, avatar...).
+            if (table_exists($pdo, 'bios') && !column_exists($pdo, 'bios', 'style')) {
+                $pdo->exec('ALTER TABLE bios ADD COLUMN style TEXT NULL AFTER accent');
+                log_activity('schema_migrate', 'added bios.style');
+            }
             // Persistent error log (admin viewer page reads this).
             if (!table_exists($pdo, 'error_logs')) {
                 $pdo->exec('CREATE TABLE IF NOT EXISTS error_logs (
@@ -3208,11 +3217,121 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
         <?php
     }
 
+    function bio_bg_presets(): array
+    {
+        return [
+            'aurora' => ['label' => 'Aurora', 'css' => 'linear-gradient(150deg,#0b0e17 0%,#11162b 45%,#1b1f38 100%)'],
+            'sunset' => ['label' => 'Sunset', 'css' => 'linear-gradient(160deg,#1a0f24 0%,#3d1a4a 60%,#5c2240 100%)'],
+            'ocean'  => ['label' => 'Ocean',  'css' => 'linear-gradient(160deg,#071a2c 0%,#0e3a5e 60%,#0d2b46 100%)'],
+            'mint'   => ['label' => 'Mint',   'css' => 'linear-gradient(160deg,#061f1a 0%,#0f3d33 60%,#0a2b24 100%)'],
+            'candy'  => ['label' => 'Candy',  'css' => 'linear-gradient(160deg,#2b0a2e 0%,#5c1654 60%,#3d1050 100%)'],
+            'night'  => ['label' => 'Night',  'css' => 'linear-gradient(160deg,#05070d 0%,#101528 60%,#0a0f1e 100%)'],
+            'lava'   => ['label' => 'Lava',   'css' => 'linear-gradient(160deg,#180505 0%,#4a0d0d 60%,#2b0505 100%)'],
+            'forest' => ['label' => 'Forest', 'css' => 'linear-gradient(160deg,#06160a 0%,#0f3d1d 60%,#0a2b14 100%)'],
+            'slate'  => ['label' => 'Slate',  'css' => 'linear-gradient(160deg,#101318 0%,#262b33 60%,#171a20 100%)'],
+            'berry'  => ['label' => 'Berry',  'css' => 'linear-gradient(160deg,#1a0524 0%,#3d0d4a 60%,#2b0a33 100%)'],
+        ];
+    }
+
+    function bio_style_defaults(): array
+    {
+        return [
+            'bg_type'           => 'preset',
+            'bg_preset'         => 'aurora',
+            'bg_grad1'          => '#0b0e17',
+            'bg_grad2'          => '#11162b',
+            'bg_angle'          => 150,
+            'bg_solid'          => '#0b0e17',
+            'bg_image'          => '',
+            'bg_overlay'        => 0.55,
+            'accent'            => '#5865f2',
+            'name_color'        => '#ffffff',
+            'name_gradient'     => true,
+            'name_size'         => 1.75,
+            'bio_color'         => '#c9d1e0',
+            'bio_size'          => 0.98,
+            'btn_style'         => 'soft',
+            'btn_color'         => '',
+            'btn_text_color'    => '#ffffff',
+            'btn_radius'        => 14,
+            'btn_size'          => 0.95,
+            'btn_gap'           => 0.75,
+            'avatar_shape'      => 'circle',
+            'avatar_border'     => 3,
+            'avatar_border_color' => '',
+            'avatar_glow'       => true,
+            'card_width'        => 480,
+            'align'             => 'center',
+            'footer_text'       => '',
+        ];
+    }
+
+    // Validates/whitelists a raw style array against the defaults; anything
+    // invalid or missing falls back to a safe default.
+    function bio_style_clean(array $in): array
+    {
+        $s = bio_style_defaults();
+        $hex = '/^#[0-9a-fA-F]{6}$/';
+        if (isset($in['bg_type']) && in_array($in['bg_type'], ['preset', 'gradient', 'solid', 'image'], true)) {
+            $s['bg_type'] = $in['bg_type'];
+        }
+        if (isset($in['bg_preset']) && isset(bio_bg_presets()[$in['bg_preset']])) {
+            $s['bg_preset'] = $in['bg_preset'];
+        }
+        foreach (['bg_grad1', 'bg_grad2', 'bg_solid', 'accent', 'name_color', 'bio_color', 'btn_color', 'btn_text_color', 'avatar_border_color'] as $c) {
+            if (isset($in[$c]) && is_string($in[$c]) && preg_match($hex, $in[$c])) {
+                $s[$c] = strtolower($in[$c]);
+            }
+        }
+        $s['bg_angle'] = isset($in['bg_angle']) ? max(0, min(360, (int)$in['bg_angle'])) : $s['bg_angle'];
+        $s['bg_image'] = isset($in['bg_image']) && is_string($in['bg_image']) && preg_match('#^https?://#i', $in['bg_image']) ? mb_substr($in['bg_image'], 0, 500) : '';
+        $s['bg_overlay'] = isset($in['bg_overlay']) ? max(0, min(0.9, (float)$in['bg_overlay'])) : $s['bg_overlay'];
+        $s['name_gradient'] = !empty($in['name_gradient']);
+        $s['avatar_glow'] = !empty($in['avatar_glow']);
+        foreach (['name_size', 'bio_size', 'btn_size', 'btn_gap', 'card_width'] as $n) {
+            $s[$n] = isset($in[$n]) ? (float)$in[$n] : $s[$n];
+        }
+        $s['btn_radius'] = isset($in['btn_radius']) ? max(0, min(40, (int)$in['btn_radius'])) : $s['btn_radius'];
+        $s['avatar_border'] = isset($in['avatar_border']) ? max(0, min(12, (int)$in['avatar_border'])) : $s['avatar_border'];
+        $s['btn_style'] = isset($in['btn_style']) && in_array($in['btn_style'], ['solid', 'outline', 'soft'], true) ? $in['btn_style'] : $s['btn_style'];
+        $s['avatar_shape'] = isset($in['avatar_shape']) && in_array($in['avatar_shape'], ['circle', 'rounded', 'square'], true) ? $in['avatar_shape'] : $s['avatar_shape'];
+        $s['align'] = isset($in['align']) && in_array($in['align'], ['center', 'left'], true) ? $in['align'] : $s['align'];
+        $s['footer_text'] = isset($in['footer_text']) ? mb_substr(strip_tags((string)$in['footer_text']), 0, 200) : '';
+        return $s;
+    }
+
+    // Merges a DB row (style JSON + legacy background/accent columns) into a
+    // fully-validated style array.
+    function bio_style_from_row(array $row): array
+    {
+        $s = bio_style_defaults();
+        $hasStyle = false;
+        $raw = $row['style'] ?? null;
+        if (is_string($raw) && trim($raw) !== '') {
+            $j = json_decode($raw, true);
+            if (is_array($j)) {
+                $s = bio_style_clean($j);
+                $hasStyle = true;
+            }
+        }
+        if (!$hasStyle) {
+            $presets = bio_bg_presets();
+            $bg = (string)($row['background'] ?? '');
+            if ($bg !== '' && isset($presets[$bg])) {
+                $s['bg_preset'] = $bg;
+            }
+            $acc = (string)($row['accent'] ?? '');
+            if (preg_match('/^#[0-9a-fA-F]{6}$/', $acc)) {
+                $s['accent'] = strtolower($acc);
+            }
+        }
+        return $s;
+    }
+
     function page_footer(): void
     {
         $toolSlug = tool_slug_from_request();
-        ?>
-<footer class="container py-4 text-center text-secondary">
+        ?><footer class="container py-4 text-center text-secondary">
     <?php if ($toolSlug !== null): ?>
     <div class="mb-3">
         <button type="button" class="btn btn-outline-light btn-sm" id="kb-share-tool">
@@ -3257,6 +3376,7 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
     })();
 </script>
 <?php endif; ?>
+<?php if (!is_admin()): ?>
 <script>
     // --- Anti-DevTools + anti-debugger (site-wide, hard mode) ---
     // Any sign that browser tools opened — console, DevTools panel, or the
@@ -3309,6 +3429,8 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
         // 5) Traps stay alive on hidden tabs (timers throttle, detection continues).
         var keepAlive = setInterval(function () {}, 20000);
     })();
+</script>
+<?php endif; ?>
 
     // --- Live online counter (heartbeat + real-time polling) ---
     (function () {

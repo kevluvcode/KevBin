@@ -12,7 +12,7 @@ A pastebin for the anonymity-minded: dark, fast, "secure & untraceable" — with
 - Accounts with profiles, followers, notifications, comments, likes/dislikes
 - Short links with a Grabify-style click tracker (IP, device, referrer, VPN/proxy/Tor detection)
 - Link Tracker tool: create a redirect link that logs every click (IP, geo, device, fingerprint) with a live analytics panel
-- guns.lol-style bio pages: custom `/b/yourname` URL with your display name, bio text, avatar, gradient backgrounds, accent color and a stack of link buttons
+- guns.lol-style bio pages: custom `/b/yourname` URL with a full style editor — display name, bio text, avatar (shape/border/glow), background (10 gradients, custom gradient, solid, or image with dark overlay), name/bio colors and sizes, link-button color, style (soft/solid/outline), radius/size/spacing, card width, alignment and footer text — with a **live preview in the editor** and a custom-links dashboard section
 - Analytics trackers: image-pixel beacons (`t/px.php`) and short-link click tracking with a JS fingerprint beacon (`s/stat.php`)
 - Password locks on pastes, staff roles, request queue, IP bans
 - Read-only public API (`api.php`) + CORS-friendly bypass proxy (`api_proxy.php`)
@@ -27,6 +27,7 @@ A pastebin for the anonymity-minded: dark, fast, "secure & untraceable" — with
   - Docked DevTools detected via window-size mismatch (on resize + every 500 ms) → reload
   - `console.log` probe catches DevTools that skip debugger pauses → reload
   - The same protection is applied on standalone public pages (e.g. bio pages)
+  - **Admin accounts are fully exempt**: no anti-DevTools reloads and no rate limits
 - Self-hosted assets: bootstrap and fonts are served locally (zero third-party requests), strict CSP headers
 
 ## Install (InfinityFree)
