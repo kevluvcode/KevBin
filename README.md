@@ -29,6 +29,7 @@ A pastebin for the anonymity-minded: dark, fast, "secure & untraceable" — with
   - The same protection is applied on standalone public pages (e.g. bio pages)
   - **Admin accounts are fully exempt**: no anti-DevTools reloads and no rate limits
 - Self-hosted assets: bootstrap and fonts are served locally (zero third-party requests), strict CSP headers
+- File-based throttling for schema migration and BTC scanner (zero DB overhead per request); online counter cached per 15s window
 
 ## Install (InfinityFree)
 
