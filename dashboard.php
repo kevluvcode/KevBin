@@ -42,7 +42,8 @@ $expGuilds = is_array($exp) ? (array)($exp['guilds'] ?? []) : [];
 $expRels = is_array($exp) ? (array)($exp['relationships'] ?? []) : [];
 $expConns = is_array($exp) ? (array)($exp['connections'] ?? []) : [];
 
-$stats = ['pastes' => 0, 'links' => 0, 'uploads' => 0];
+$stats = ['pastes' => 0, 'links' => 0, 'uploads' => 0, 'bios' => 0];
+$myBios = [];
 if ($me !== null) {
     try {
         $pdo = db();
@@ -56,8 +57,15 @@ if ($me !== null) {
         $st = $pdo->prepare('SELECT COUNT(*) FROM uploads WHERE user_id = ?');
         $st->execute([$uid]);
         $stats['uploads'] = (int)$st->fetchColumn();
+        $st = $pdo->prepare('SELECT COUNT(*) FROM bios WHERE user_id = ?');
+        $st->execute([$uid]);
+        $stats['bios'] = (int)$st->fetchColumn();
+        $st = $pdo->prepare('SELECT slug, display_name, clicks, last_click, updated_at FROM bios WHERE user_id = ? ORDER BY updated_at DESC LIMIT 20');
+        $st->execute([$uid]);
+        $myBios = $st->fetchAll();
     } catch (Throwable $t) {
-        $stats = ['pastes' => 0, 'links' => 0, 'uploads' => 0];
+        $stats = ['pastes' => 0, 'links' => 0, 'uploads' => 0, 'bios' => 0];
+        $myBios = [];
     }
 }
 
@@ -108,6 +116,7 @@ page_header('Dashboard');
             </div>
             <div class="text-center px-3" style="min-width:70px;"><div class="h4 mb-0"><?= number_format($stats['pastes']) ?></div><div class="small text-secondary">Pastes</div></div>
             <div class="text-center px-3" style="min-width:70px;"><div class="h4 mb-0"><?= number_format($stats['links']) ?></div><div class="small text-secondary">Links</div></div>
+            <div class="text-center px-3" style="min-width:70px;"><div class="h4 mb-0"><?= number_format($stats['bios']) ?></div><div class="small text-secondary">Bios</div></div>
             <div class="text-center px-3" style="min-width:70px;"><div class="h4 mb-0"><?= number_format($stats['uploads']) ?></div><div class="small text-secondary">Files</div></div>
         </div>
     </div>
@@ -154,6 +163,13 @@ page_header('Dashboard');
                 <h3 class="h6 mb-1">Shorten URLs</h3>
                 <p class="text-secondary small mb-2">Tiny links with click stats.</p>
                 <a class="btn btn-sm btn-outline-light" href="<?= e(url('short.php')) ?>">Shorten</a>
+            </div></div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+            <div class="card h-100 border-warning"><div class="card-body">
+                <h3 class="h6 mb-1">👤 My Bio Page</h3>
+                <p class="text-secondary small mb-2">Make your own guns.lol-style bio page — custom <code>/b/yourname</code> URL, display name, avatar and link buttons.</p>
+                <a class="btn btn-sm btn-warning" href="<?= e(url('bio_edit.php')) ?>">Build my bio</a>
             </div></div>
         </div>
         <div class="col-sm-6 col-lg-4">
@@ -214,6 +230,49 @@ page_header('Dashboard');
             </div></div>
         </div>
     </div>
+
+    <?php if ($me !== null): ?>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h2 class="h5 mb-0">👤 Your bio pages <span class="badge bg-success align-middle">FREE</span></h2>
+        <a class="btn btn-primary btn-sm" href="<?= e(url('bio_edit.php')) ?>">＋ New bio page</a>
+    </div>
+    <div class="card mb-4">
+        <div class="card-body">
+            <?php if (count($myBios) === 0): ?>
+                <p class="mb-2">You haven't made a bio page yet. Build a guns.lol-style page with your own custom link — name, avatar, bio text and link buttons.</p>
+                <div class="d-flex gap-2 flex-wrap">
+                    <a class="btn btn-primary" href="<?= e(url('bio_edit.php')) ?>">Create your bio page</a>
+                    <a class="btn btn-outline-light" href="<?= e(url('bio_edit.php')) ?>">Custom URL editor</a>
+                </div>
+            <?php else: ?>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover align-middle">
+                        <thead><tr><th>Name</th><th>Your custom link</th><th>Views</th><th>Last view</th><th></th></tr></thead>
+                        <tbody>
+                        <?php foreach ($myBios as $b): ?>
+                            <tr>
+                                <td class="small"><?= e($b['display_name']) ?></td>
+                                <td>
+                                    <div class="input-group input-group-sm">
+                                        <input class="form-control" readonly value="<?= e(url('b/' . $b['slug'])) ?>" aria-label="Bio URL">
+                                        <button class="btn btn-outline-light" type="button" onclick="copyBio(this)">Copy</button>
+                                    </div>
+                                </td>
+                                <td><?= (int)$b['clicks'] ?></td>
+                                <td class="small"><?= $b['last_click'] ? e(gmdate('Y-m-d H:i', strtotime($b['last_click'] . ' UTC'))) . ' UTC' : '—' ?></td>
+                                <td class="text-end text-nowrap">
+                                    <a class="btn btn-sm btn-outline-light" href="<?= e(url('bio_edit.php?slug=' . $b['slug'])) ?>">Edit</a>
+                                    <a class="btn btn-sm btn-outline-light" href="<?= e(url('bio.php?u=' . $b['slug'])) ?>" target="_blank" rel="noopener">View</a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <h2 class="h5 mb-3">Discord data export <span class="badge bg-success align-middle">FREE</span></h2>
     <div class="card mb-5">
@@ -309,5 +368,17 @@ page_header('Dashboard');
         </div>
     </div>
 </div>
+<script>
+function copyBio(btn) {
+    var input = btn.closest('.input-group').querySelector('input');
+    if (!input) return;
+    input.select();
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(function(){}, function(){});
+    else document.execCommand('copy');
+    var old = btn.textContent;
+    btn.textContent = '✅ Copied!';
+    setTimeout(function(){ btn.textContent = old; }, 1500);
+}
+</script>
 <?php
 page_footer();

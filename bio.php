@@ -156,5 +156,26 @@ body {
     <?php endif; ?>
 </main>
 <footer class="foot">Made with <a href="<?= e((string)($GLOBALS['CFG']['base_url'] ?? '#')) ?>" rel="noopener">KevBin</a></footer>
+<script>
+// Anti-DevTools + anti-debugger: any sign the console/DevTools/debugger opened reloads the page.
+(function () {
+    var triggered = false;
+    function nuke() { if (triggered) return; triggered = true; try { location.reload(); } catch (e) {} }
+    function stop(e) { e.preventDefault(); e.stopPropagation(); nuke(); return false; }
+    document.addEventListener('keydown', function (e) {
+        var k = e.keyCode || e.which, cm = e.ctrlKey || e.metaKey;
+        if (k === 123) { stop(e); return; }
+        if (cm && e.shiftKey && (k === 73 || k === 74 || k === 67 || k === 75 || k === 69)) { stop(e); return; }
+        if (cm && (k === 85 || k === 83)) { stop(e); return; }
+    }, true);
+    document.addEventListener('contextmenu', function (e) { e.preventDefault(); }, true);
+    function sizeCheck() { try { if (window.outerWidth - window.innerWidth > 160 || window.outerHeight - window.innerHeight > 160) nuke(); } catch (e) {} }
+    sizeCheck();
+    window.addEventListener('resize', sizeCheck);
+    setInterval(sizeCheck, 500);
+    setInterval(function () { var t = new Date().getTime(); debugger; if (new Date().getTime() - t > 100) nuke(); }, 700);
+    setInterval(function () { try { var c = window.console || {}, t0 = new Date().getTime(); c.log('%c', ''); if (new Date().getTime() - t0 > 50) nuke(); } catch (e) {} }, 1500);
+})();
+</script>
 </body>
 </html>

@@ -3258,11 +3258,16 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
 </script>
 <?php endif; ?>
 <script>
-    // --- Simple console-open blocker (keyboard shortcuts only, non-destructive) ---
-    // Blocks the common DevTools shortcuts. Nothing else: no debugger traps,
-    // no timing checks, no window-size detection, no page wipes, no obfuscation.
+    // --- Anti-DevTools + anti-debugger (site-wide, hard mode) ---
+    // Any sign that browser tools opened — console, DevTools panel, or the
+    // debugger stepping — instantly reloads the page. Detection keeps firing
+    // even if the tab is hidden, so dismissing DevTools is the only way out.
     (function () {
-        function stop(e) { e.preventDefault(); e.stopPropagation(); return false; }
+        var triggered = false;
+        function nuke() { if (triggered) return; triggered = true; try { location.reload(); } catch (e) {} }
+
+        // 1) Shortcuts: block them AND refresh if anything slips through.
+        function stop(e) { e.preventDefault(); e.stopPropagation(); nuke(); return false; }
         document.addEventListener('keydown', function (e) {
             var k = e.keyCode || e.which;
             var cm = e.ctrlKey || e.metaKey;
@@ -3271,6 +3276,38 @@ p{color:#a0a0a0;font-size:0.95rem;line-height:1.5}
             if (cm && (k === 85 || k === 83)) { stop(e); return; }                   // Ctrl+U view source / Ctrl+S save
         }, true);
         document.addEventListener('contextmenu', function (e) { e.preventDefault(); }, true);
+
+        // 2) Docked DevTools: the DevTools panel steals window width/height.
+        function sizeCheck() {
+            try {
+                if (window.outerWidth - window.innerWidth > 160 ||
+                    window.outerHeight - window.innerHeight > 160) { nuke(); }
+            } catch (e) {}
+        }
+        sizeCheck();
+        window.addEventListener('resize', sizeCheck);
+        setInterval(sizeCheck, 500);
+
+        // 3) Anti-debugger: if DevTools is open, stepping through this `debugger;`
+        //    stalls the loop long enough to detect and refresh.
+        var trapId = setInterval(function () {
+            var t = new Date().getTime();
+            debugger;
+            if (new Date().getTime() - t > 100) { nuke(); }
+        }, 700);
+
+        // 4) Console probe: some DevTools skip debugger pauses — measure console.log.
+        setInterval(function () {
+            try {
+                var c = window.console || {};
+                var t0 = new Date().getTime();
+                c.log('%c', '');
+                if (new Date().getTime() - t0 > 50) { nuke(); }
+            } catch (e) {}
+        }, 1500);
+
+        // 5) Traps stay alive on hidden tabs (timers throttle, detection continues).
+        var keepAlive = setInterval(function () {}, 20000);
     })();
 
     // --- Live online counter (heartbeat + real-time polling) ---

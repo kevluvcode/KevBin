@@ -11,19 +11,22 @@ A pastebin for the anonymity-minded: dark, fast, "secure & untraceable" — with
 - Anonymous paste publishing with expiry, edit keys and keyword watermarks
 - Accounts with profiles, followers, notifications, comments, likes/dislikes
 - Short links with a Grabify-style click tracker (IP, device, referrer, VPN/proxy/Tor detection)
+- Link Tracker tool: create a redirect link that logs every click (IP, geo, device, fingerprint) with a live analytics panel
+- guns.lol-style bio pages: custom `/b/yourname` URL with your display name, bio text, avatar, gradient backgrounds, accent color and a stack of link buttons
+- Analytics trackers: image-pixel beacons (`t/px.php`) and short-link click tracking with a JS fingerprint beacon (`s/stat.php`)
 - Password locks on pastes, staff roles, request queue, IP bans
 - Read-only public API (`api.php`) + CORS-friendly bypass proxy (`api_proxy.php`)
-- 35+ tools: Lua obfuscator, Lua runner (server-side interpreter), SHA-256 cracker (6s capped), JWT inspector, minifier, UID generator, hashes, encoders, QR, DNS, WHOIS/RDAP, header inspector, password generator & more
+- 100+ in-browser tools: Lua obfuscator + sandbox, site viewer, page cloner, link expander/bypasser, stealer checker, SHA-256 cracker (6s capped), JWT inspector, minifier, UID generator, hashes, encoders, QR, DNS, WHOIS/RDAP, header inspector, password generator, sens converter, games & more
 - Per-user UI theme: choose your own site background (solid color or gradient), layout width (compact / default / wide) and accent color from Settings
 - Account recovery keys: one-time random key shown at registration (no email needed) with a `forgot.php` reset flow
 - Custom captcha on login / registration / password reset
-- **Anti-DevTools protection** (site-wide, "hard mode"):
-  - Opening the console seals the page immediately
-  - `window.console` is trapped — ANY access (including typing `console` in DevTools) wipes the page
-  - F12 / Ctrl+Shift+I / J / C / K / E, Ctrl+U view-source and Ctrl+S are blocked
-  - Docked DevTools detected via window-size mismatch (checked on resize + every 250 ms)
-  - Floating/detached DevTools detected via debugger-statement timing (also on focus and visibility change)
-  - Context-menu inspection and console reassignment are also wipe triggers
+- **Anti-DevTools + anti-debugger** (site-wide, "hard mode"):
+  - Any sign the console or DevTools opened **instantly reloads the page** (a refresh, not a wipe)
+  - `debugger;` timing trap — stepping through it while DevTools is open stalls the loop and triggers a reload
+  - F12 / Ctrl+Shift+I / J / C / K / E, Ctrl+U view-source and Ctrl+S are blocked (and also trigger a reload)
+  - Docked DevTools detected via window-size mismatch (on resize + every 500 ms) → reload
+  - `console.log` probe catches DevTools that skip debugger pauses → reload
+  - The same protection is applied on standalone public pages (e.g. bio pages)
 - Self-hosted assets: bootstrap and fonts are served locally (zero third-party requests), strict CSP headers
 
 ## Install (InfinityFree)
